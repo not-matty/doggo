@@ -12,7 +12,7 @@ export default function LoginPage() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome to Doggo</Text>
+      <Text style={styles.title}>doggo</Text>
       <Button title="Login" onPress={handleLogin} />
     </View>
   );

@@ -8,9 +8,9 @@ export default function Layout() {
   const navigation = useNavigation();
 
   return (
-    <Stack initialRouteName="(root)/login/page" screenOptions={{ headerShown: false }}>
-      {/* Root Layout for Login Screen */}
-      <Stack.Screen name="(root)" options={{ headerShown: false }} />
+    <Stack initialRouteName="login/page" screenOptions={{ headerShown: false }}>
+      {/* Main Login Screen */}
+      <Stack.Screen name="login/page" options={{ headerShown: false }} />
 
       {/* Main Tabs Layout */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
