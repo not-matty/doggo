@@ -1,12 +1,14 @@
 import React from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, TextInput, StyleSheet, Keyboard, TouchableWithoutFeedback } from 'react-native';
 
 export default function SearchPage() {
     return (
-        <View style={styles.container}>
-            <TextInput placeholder="Search connections..." style={styles.searchInput} />
-            {/* Additional search content here */}
-        </View>
+        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <View style={styles.container}>
+                <TextInput placeholder="search" style={styles.searchInput} />
+                {/* Additional search content here */}
+            </View>
+        </TouchableWithoutFeedback>
     );
 }
 
