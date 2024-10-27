@@ -10,7 +10,7 @@ export default function Layout() {
 
   useEffect(() => {
     if (!isLoggedIn) {
-      router.replace('/login/page'); // Redirect to the login route if not logged in
+      router.replace('/login/page'); // Redirect to the correct login route if not logged in
     }
   }, [isLoggedIn]);
 
@@ -25,7 +25,7 @@ export default function Layout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       
       {/* Login Screen */}
-      <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="login/page" options={{ headerShown: false }} />
 
       {/* Messages Screen with Back Button */}
       <Stack.Screen
