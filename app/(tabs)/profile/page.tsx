@@ -23,7 +23,7 @@ const ProfilePage = () => {
       <View style={styles.profileContainer}>
         <TouchableOpacity onPress={pickImage}>
           <Image
-            source={profileImage ? { uri: profileImage } : require('../../assets/images/Default_pfp.svg.png')}
+            source={profileImage ? { uri: profileImage } : require('../../../assets/images/Default_pfp.svg.png')}
             style={styles.profileImage}
           />
         </TouchableOpacity>

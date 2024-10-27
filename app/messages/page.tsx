@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 
 type Message = {
   id: string;
@@ -34,7 +43,7 @@ export default function MessagesPage() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 70} // Adjust based on your header height if needed
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0} // Adjust this offset as needed
     >
       <FlatList
         data={messages}
@@ -48,8 +57,8 @@ export default function MessagesPage() {
           placeholder="Type a message..."
           value={inputText}
           onChangeText={setInputText}
-          returnKeyType="default" // Keeps the label as "Return"
-          onSubmitEditing={handleSend} // Calls handleSend when "Return" is pressed
+          returnKeyType="default"
+          onSubmitEditing={handleSend}
         />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
           <Text style={styles.sendButtonText}>Send</Text>
