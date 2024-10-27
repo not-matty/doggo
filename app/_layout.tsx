@@ -1,29 +1,41 @@
 // app/_layout.tsx
-import { Stack } from 'expo-router';
-import Feather from 'react-native-vector-icons/Feather';
+import { Stack, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import Feather from 'react-native-vector-icons/Feather';
 
 export default function Layout() {
-  const navigation = useNavigation();
+  const [isLoggedIn, setIsLoggedIn] = useState(false); // Assume not logged in initially
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      router.replace('/login/page'); // Redirect to the login route if not logged in
+    }
+  }, [isLoggedIn]);
+
+  const handleLogin = () => {
+    setIsLoggedIn(true);
+    router.replace('/home/page'); // Redirect to home after logging in
+  };
 
   return (
-    <Stack initialRouteName="login/page" screenOptions={{ headerShown: false }}>
-      {/* Main Login Screen */}
-      <Stack.Screen name="login/page" options={{ headerShown: false }} />
-
+    <Stack screenOptions={{ headerShown: false }}>
       {/* Main Tabs Layout */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      
+      {/* Login Screen */}
+      <Stack.Screen name="login" options={{ headerShown: false }} />
 
-      {/* Messages Screen without Tab Bar */}
+      {/* Messages Screen with Back Button */}
       <Stack.Screen
         name="messages/page"
         options={{
           headerShown: true,
           title: 'Messages',
           headerLeft: () => (
-            <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingLeft: 10 }}>
-              <Feather name="chevron-left" size={22} color="black" />
+            <TouchableOpacity onPress={() => router.back()} style={{ paddingLeft: 10 }}>
+              <Feather name="chevron-left" size={24} color="black" />
             </TouchableOpacity>
           ),
         }}

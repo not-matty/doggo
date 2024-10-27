@@ -1,3 +1,4 @@
+// app/login/page.tsx
 import React from 'react';
 import { View, Button, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -6,8 +7,8 @@ export default function LoginPage() {
   const router = useRouter();
 
   const handleLogin = () => {
-    // Pretend login functionality: navigate to Home page
-    router.push('/home/page');
+    // After login, navigate to the home screen
+    router.replace('/home/page');
   };
 
   return (

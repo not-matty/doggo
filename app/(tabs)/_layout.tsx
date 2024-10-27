@@ -5,14 +5,6 @@ import Feather from 'react-native-vector-icons/Feather';
 export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ tabBarShowLabel: false }}>
-      {/* Login Tab as Initial Screen */}
-      <Tabs.Screen 
-        name="login/page" 
-        options={{
-          tabBarButton: () => null, // Hide Login tab from the tab bar
-        }}
-      />
-
       {/* Home Tab */}
       <Tabs.Screen 
         name="home/page" 
