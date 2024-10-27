@@ -1,15 +1,30 @@
+// app/_layout.tsx
 import { Tabs } from 'expo-router';
-import Icon from 'react-native-vector-icons/FontAwesome';
+import Feather from 'react-native-vector-icons/Feather';
+import { TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 export default function Layout() {
+  const navigation = useNavigation();
+
   return (
-    <Tabs initialRouteName="login/page" screenOptions={{ tabBarShowLabel: false }}>
+    <Tabs
+      initialRouteName="login/page"
+      screenOptions={{
+        tabBarShowLabel: false,
+        headerStyle: {
+          elevation: 0, // Remove shadow on Android
+          shadowOpacity: 0, // Remove shadow on iOS
+          borderBottomWidth: 0, // Remove bottom border
+        },
+      }}
+    >
       {/* Home Tab */}
       <Tabs.Screen 
         name="home/page" 
         options={{ 
           title: 'Home', 
-          tabBarIcon: ({ color, size }) => <Icon name="home" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Feather name="home" size={size} color={color} />,
         }} 
       />
 
@@ -18,7 +33,7 @@ export default function Layout() {
         name="search/page" 
         options={{ 
           title: 'Search', 
-          tabBarIcon: ({ color, size }) => <Icon name="search" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Feather name="search" size={size} color={color} />,
         }}
       />
 
@@ -27,7 +42,7 @@ export default function Layout() {
         name="profile/page" 
         options={{ 
           title: 'Profile', 
-          tabBarIcon: ({ color, size }) => <Icon name="user" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />,
         }} 
       />
 
@@ -39,11 +54,17 @@ export default function Layout() {
         }}
       />
 
-      {/* Hide Messages Tab */}
+      {/* Hide Messages Tab with Custom Thin Back Button */}
       <Tabs.Screen 
         name="messages/page" 
         options={{
+          title: 'Messages',
           tabBarButton: () => null, // Hide Messages tab from the tab bar
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingLeft: 10 }}>
+              <Feather name="chevron-left" size={22} color="black" />
+            </TouchableOpacity>
+          ),
         }}
       />
     </Tabs>
