@@ -9,6 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import Feather from 'react-native-vector-icons/Feather';
+
+const INITIAL_MESSAGES: Message[] = [
+  { id: '1', text: 'Hello! How are you?', incoming: true },
+  { id: '2', text: 'I’m good, thanks! How about you?', incoming: false },
+];
 
 type Message = {
   id: string;
@@ -17,10 +23,7 @@ type Message = {
 };
 
 export default function MessagesPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: 'Hello! How are you?', incoming: true },
-    { id: '2', text: 'I’m good, thanks! How about you?', incoming: false },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
 
   const handleSend = () => {
@@ -50,6 +53,7 @@ export default function MessagesPage() {
         renderItem={renderItem}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.messageList}
+        keyboardDismissMode="on-drag"  // Dismiss keyboard on swipe down
       />
       <View style={styles.inputContainer}>
         <TextInput
@@ -58,10 +62,10 @@ export default function MessagesPage() {
           value={inputText}
           onChangeText={setInputText}
           returnKeyType="default"
-          onSubmitEditing={handleSend}
+          blurOnSubmit={false}  // Keeps keyboard open on pressing 'Return'
         />
-        <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
-          <Text style={styles.sendButtonText}>Send</Text>
+        <TouchableOpacity onPress={handleSend}>
+          <Feather name="send" size={24} color="#007aff" />
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -89,11 +93,9 @@ const styles = StyleSheet.create({
   messageText: { color: '#fff', fontSize: 16 },
   inputContainer: {
     flexDirection: 'row',
-    padding: 10,
-    backgroundColor: '#fff',
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderColor: '#e0e0e0',
+    padding: 15,        // Consistent padding around the input
+    height: 80,
   },
   input: {
     flex: 1,
@@ -103,12 +105,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f1f1',
     fontSize: 16,
   },
-  sendButton: {
-    marginLeft: 10,
-    backgroundColor: '#007aff',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-  },
-  sendButtonText: { color: '#fff', fontSize: 16, fontWeight: '500' },
 });
