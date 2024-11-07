@@ -1,45 +1,54 @@
 // app/_layout.tsx
+
+import React, { useEffect, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { TouchableOpacity } from 'react-native';
-import Feather from 'react-native-vector-icons/Feather';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function Layout() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false); // Assume not logged in initially
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     if (!isLoggedIn) {
-      router.replace('/login/page'); // Redirect to the correct login route if not logged in
+      router.replace('/login/page');
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, router]);
 
   const handleLogin = () => {
     setIsLoggedIn(true);
-    router.replace('/home/page'); // Redirect to home after logging in
+    router.replace('/home/page');
   };
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {/* Main Tabs Layout */}
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      
-      {/* Login Screen */}
-      <Stack.Screen name="login/page" options={{ headerShown: false }} />
-
-      {/* Messages Screen with Back Button */}
-      <Stack.Screen
-        name="messages/page"
-        options={{
-          headerShown: true,
-          title: 'Messages',
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ paddingLeft: 10 }}>
-              <Feather name="chevron-left" size={24} color="black" />
-            </TouchableOpacity>
-          ),
+    <GestureHandlerRootView style={styles.gestureHandler}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
         }}
-      />
-    </Stack>
+      >
+        {/* Tabs Layout */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
+        {/* Messages Screen */}
+        <Stack.Screen
+          name="messages/page"
+          options={{
+            headerShown: false,
+            gestureEnabled: true, // Enable gestures for Messages page
+            animation: 'slide_from_right', // Use default slide animation
+          }}
+        />
+
+        {/* Login Screen */}
+        <Stack.Screen name="login/page" options={{ headerShown: false }} />
+      </Stack>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  gestureHandler: {
+    flex: 1,
+  },
+});

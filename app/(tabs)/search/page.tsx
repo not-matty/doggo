@@ -1,3 +1,5 @@
+// app/(tabs)/search/page.tsx
+
 import React, { useState } from 'react';
 import { View, TextInput, StyleSheet, Keyboard, TouchableWithoutFeedback, FlatList, Text, TouchableOpacity, Alert } from 'react-native';
 
@@ -36,9 +38,8 @@ export default function SearchPage() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        paddingTop: 50,
-        paddingHorizontal: 20,
-        backgroundColor: '#fff',
+        padding: 20, // Removed top/bottom indents
+        backgroundColor: '#fff', // Clean background
     },
     searchInput: {
         height: 50,
@@ -47,6 +48,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 15,
         fontSize: 16,
         marginBottom: 20,
+        marginTop: 50
     },
     userList: {
         flex: 1,
@@ -54,10 +56,10 @@ const styles = StyleSheet.create({
     userItem: {
         paddingVertical: 15,
         paddingHorizontal: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
+        // Removed borderBottomWidth and borderBottomColor
     },
     userName: {
         fontSize: 18,
+        color: '#000', // Black text
     },
 });

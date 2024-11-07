@@ -1,17 +1,13 @@
-import { registerRootComponent } from 'expo';
+// App.js
+
 import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import ErrorBoundary from './ErrorBoundary';
-import App from './App';  // Assuming App is your main component or navigator
+import HomePage from './HomePage'; // Adjust the import based on your file structure
 
-function RootApp() {
+export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
+      <HomePage />
     </GestureHandlerRootView>
   );
 }
-
-registerRootComponent(RootApp);
