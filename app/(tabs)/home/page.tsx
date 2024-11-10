@@ -10,10 +10,12 @@ export default function HomePage() {
   const [isModalVisible, setModalVisible] = useState(false);
 
   const handlePeekPress = () => {
+    console.log('Peek Pressed');
     setModalVisible(true);
   };
 
   const handleSwipeOpen = () => {
+    console.log('Swipe Opened');
     router.push('/messages/page');
   };
 
