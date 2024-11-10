@@ -1,14 +1,17 @@
-// app/(tabs)/search/page.tsx
-
 import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, Keyboard, TouchableWithoutFeedback, FlatList, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, TextInput, StyleSheet, Keyboard, TouchableWithoutFeedback, FlatList, Text, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function SearchPage() {
     const [query, setQuery] = useState('');
     const demoUsers = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `person${i + 1}` }));
+    const router = useRouter();
 
-    const handleUserClick = (userName: string) => {
-        Alert.alert("User Clicked", `You clicked on ${userName}`);
+    const handleUserClick = (userId: number) => {
+        router.push({
+            pathname: '/profile_details/page',
+            params: { userId: userId.toString() }, 
+        });
     };
 
     return (
@@ -24,7 +27,7 @@ export default function SearchPage() {
                     data={demoUsers}
                     keyExtractor={(item) => item.id.toString()}
                     renderItem={({ item }) => (
-                        <TouchableOpacity onPress={() => handleUserClick(item.name)} style={styles.userItem}>
+                        <TouchableOpacity onPress={() => handleUserClick(item.id)} style={styles.userItem}>
                             <Text style={styles.userName}>{item.name}</Text>
                         </TouchableOpacity>
                     )}
@@ -38,8 +41,8 @@ export default function SearchPage() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 20, // Removed top/bottom indents
-        backgroundColor: '#fff', // Clean background
+        padding: 20,
+        backgroundColor: '#fff',
     },
     searchInput: {
         height: 50,
@@ -48,7 +51,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 15,
         fontSize: 16,
         marginBottom: 20,
-        marginTop: 50
+        marginTop: 50,
     },
     userList: {
         flex: 1,
@@ -56,10 +59,9 @@ const styles = StyleSheet.create({
     userItem: {
         paddingVertical: 15,
         paddingHorizontal: 10,
-        // Removed borderBottomWidth and borderBottomColor
     },
     userName: {
         fontSize: 18,
-        color: '#000', // Black text
+        color: '#000',
     },
 });
