@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
 // Import the local profile picture
-import defaultProfilePic from '../../assets/images/Default_pfp.svg.png'; // Adjust the path based on your project structure
+import defaultProfilePic from '../../assets/images/Default_pfp.svg.png';
 
 const ProfileDetails = () => {
     const { userId } = useLocalSearchParams();
