@@ -4,44 +4,26 @@
     "slug": "doggo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
+    "icon": "./app/assets/images/icon.png",
     "splash": {
-      "image": "./assets/images/splash.png",
+      "image": "./app/assets/images/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.notmatty.doggo"
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "package": "com.notmatty.doggo"
+        "foregroundImage": "./app/assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
     },
     "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
-    "plugins": [
-      "expo-router"
-    ],
-    "experiments": {
-      "typedRoutes": true
-    },
-    "entryPoint": "./node_modules/expo-router/entry",
-    "start": {
-      "url": "exp://localhost:19000/--/login/page"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "8afa3833-7644-46b1-be2c-4d7acea8fd55"
-      }
+      "favicon": "./app/assets/images/favicon.png"
     }
   }
 }
