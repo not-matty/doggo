@@ -55,7 +55,7 @@ const RootNavigator: React.FC = () => {
         <RootStack.Screen
           name="MessagesPeek"
           component={MessagesPeek}
-          options={{ presentation: 'modal', headerShown: false }} // Keep modal presentation for MessagesPeek
+          options={{headerShown: false }} 
         />
         <RootStack.Screen
           name="MessagesPage"

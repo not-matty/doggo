@@ -1,87 +1,89 @@
-// app/features/messages/MessagesPeek.tsx
-
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
-import Feather from 'react-native-vector-icons/Feather';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../../navigation/types';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedGestureHandler,
+  withSpring,
+} from 'react-native-reanimated';
 
-type MessagesPeekNavigationProp = StackNavigationProp<RootStackParamList, 'MessagesPeek'>;
+const { width } = Dimensions.get('window');
+const PEEK_THRESHOLD = -width * 0.5; // Threshold for snapping open the peek screen
+
+// Define the context type, extending Record<string, unknown>
+interface GestureContext extends Record<string, unknown> {
+  startX: number;
+}
 
 const MessagesPeek: React.FC = () => {
-  const navigation = useNavigation<MessagesPeekNavigationProp>();
+  const translateX = useSharedValue(0);
 
-  const handleViewAll = () => {
-    navigation.navigate('MessagesPage');
-  };
+  const gestureHandler = useAnimatedGestureHandler<
+    PanGestureHandlerGestureEvent,
+    GestureContext
+  >({
+    onStart: (_, ctx) => {
+      ctx.startX = translateX.value; // TypeScript now knows startX exists on ctx
+    },
+    onActive: (event, ctx) => {
+      translateX.value = ctx.startX + event.translationX;
+    },
+    onEnd: () => {
+      if (translateX.value < PEEK_THRESHOLD) {
+        // Snap open
+        translateX.value = withSpring(-width);
+      } else {
+        // Snap back to the original position
+        translateX.value = withSpring(0);
+      }
+    },
+  });
 
-  const handleClose = () => {
-    navigation.goBack();
-  };
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
 
   return (
-    <View style={styles.modalBackground}>
-      <View style={styles.peekContainer}>
+    <PanGestureHandler onGestureEvent={gestureHandler}>
+      <Animated.View style={[styles.peekContainer, animatedStyle]}>
         <View style={styles.peekHeader}>
           <Text style={styles.peekTitle}>New Messages</Text>
-          <TouchableOpacity onPress={handleClose}>
-            <Feather name="x" size={24} color="#000" />
-          </TouchableOpacity>
         </View>
-        {/* Placeholder for message previews */}
         <View style={styles.previewList}>
           <Text style={styles.previewText}>Message preview 1</Text>
           <Text style={styles.previewText}>Message preview 2</Text>
-          {/* Add more previews as needed */}
         </View>
-        <TouchableOpacity style={styles.viewAllButton} onPress={handleViewAll}>
-          <Text style={styles.viewAllText}>View All Messages</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      </Animated.View>
+    </PanGestureHandler>
   );
 };
 
 const styles = StyleSheet.create({
-  modalBackground: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   peekContainer: {
-    width: '80%',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: width,
+    backgroundColor: 'white',
+    borderLeftWidth: 1,
+    borderColor: '#ddd',
     padding: 20,
   },
   peekHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    marginBottom: 10,
   },
   peekTitle: {
     fontSize: 18,
     fontWeight: 'bold',
   },
   previewList: {
-    marginTop: 20,
+    marginTop: 10,
   },
   previewText: {
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  viewAllButton: {
-    marginTop: 20,
-    alignItems: 'center',
-    paddingVertical: 10,
-    backgroundColor: '#007aff',
-    borderRadius: 5,
-  },
-  viewAllText: {
-    color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
+    color: '#555',
   },
 });
 
