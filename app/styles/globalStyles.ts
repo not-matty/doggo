@@ -1,5 +1,3 @@
-// app/styles/globalStyles.ts
-
 import { StyleSheet } from 'react-native';
 
 const globalStyles = StyleSheet.create({

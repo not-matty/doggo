@@ -1,17 +1,49 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "jsx": "react",
     "strict": true,
-    "baseUrl": "./",
+    "baseUrl": "app",
     "paths": {
-      "@/*": ["app/*"],
-      "@components/*": ["app/components/*"],
-      "@features/*": ["app/features/*"],
-      "@navigation/*": ["app/navigation/*"],
-      "@layouts/*": ["app/layouts/*"],
-      "@styles/*": ["app/styles/*"],
-      "@assets/*": ["app/assets/*"]
-    }
+      "@components/*": [
+        "components/*"
+      ],
+      "@context/*": [
+        "context/*"
+      ],
+      "@features/*": [
+        "features/*"
+      ],
+      "@navigation/*": [
+        "navigation/*"
+      ],
+      "@styles/*": [
+        "styles/*"
+      ],
+      "@layouts/*": [
+        "layouts/*"
+      ],
+      "@data/*": [
+        "data/*"
+      ],
+      "@assets/*": [
+        "assets/*"
+      ],
+      "@services/*": [
+        "services/*"
+      ]
+    },
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["app/**/*"]
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js"
+  ],
+  "extends": "expo/tsconfig.base"
 }

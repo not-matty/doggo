@@ -1,5 +1,3 @@
-// app/components/common/CustomHeader.tsx
-
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -33,7 +31,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   header: {
-    height: 60,
+    height: 180,
     paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',

@@ -2,22 +2,22 @@
 
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import LoginPage from './LoginPage';
-import { AuthStackParamList } from '@/navigation/types'; // Updated import with path alias
+import Login from './LoginPage';
+import { AuthStackParamList } from '@navigation/types';
 
 const AuthStack = createStackNavigator<AuthStackParamList>();
 
 const AuthNavigator: React.FC = () => {
-    return (
-        <AuthStack.Navigator>
-            <AuthStack.Screen
-                name="Login"
-                component={LoginPage}
-                options={{ headerShown: false }}
-            />
-            {/* Add more authentication screens here if needed */}
-        </AuthStack.Navigator>
-    );
+  return (
+    <AuthStack.Navigator>
+      <AuthStack.Screen
+        name="Login"
+        component={Login}
+        options={{ headerShown: false }}
+      />
+      {/* Add other Auth stack screens here */}
+    </AuthStack.Navigator>
+  );
 };
 
 export default AuthNavigator;

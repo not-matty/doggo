@@ -29,8 +29,8 @@ const TabsNavigator: React.FC = () => {
 
           return <Feather name={iconName} size={size} color={color} />;
         },
-        headerShown: false, 
-        tabBarShowLabel: false, 
+        headerShown: false,
+        tabBarShowLabel: false,
         tabBarStyle: {
           backgroundColor: '#fff',
           borderTopColor: '#fff',

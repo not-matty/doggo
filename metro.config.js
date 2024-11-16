@@ -1,14 +1,19 @@
+// metro.config.js
+
 const { getDefaultConfig } = require('expo/metro-config');
 
-module.exports = (() => {
-  const config = getDefaultConfig(__dirname);
+const defaultConfig = getDefaultConfig(__dirname);
 
-  const { resolver } = config;
+defaultConfig.resolver.extraNodeModules = {
+  '@components': './app/components',
+  '@context': './app/context',
+  '@features': './app/features',
+  '@navigation': './app/navigation',
+  '@styles': './app/styles',
+  '@layouts': './app/layouts',
+  '@data': './app/data',
+  '@assets': './app/assets',
+  '@services': './app/services',
+};
 
-  config.resolver = {
-    ...resolver,
-    sourceExts: [...resolver.sourceExts, 'cjs'],
-  };
-
-  return config;
-})();
+module.exports = defaultConfig;

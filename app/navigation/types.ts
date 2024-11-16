@@ -1,11 +1,15 @@
 // app/navigation/types.ts
 
 export type RootStackParamList = {
-  Auth: undefined;         // Auth flow
-  Tabs: undefined;         // Main app tabs
-  MessagesPeek: undefined; // Global modal
-  MessagesPage: undefined; // Messages stack
-  // Add other global routes here
+  AuthNavigator: undefined;
+  TabsNavigator: undefined;
+  HomeNavigator: undefined;
+  MessagesNavigator: undefined;
+  SearchNavigator: undefined;
+  ProfileNavigator: undefined;
+  MessagesPeek: undefined;
+  MessagesPage: undefined;
+  // Add other Root stack screens or navigators here
 };
 
 export type AuthStackParamList = {
@@ -36,13 +40,17 @@ export type MessagesStackParamList = {
 };
 
 export type ProfileStackParamList = {
-  ProfilePage: undefined;
+  ProfilePage: { userId: string };
   ProfileDetails: { userId: string };
   // Add other Profile stack screens here if needed
 };
 
-export type User = {
-  id: number;
+export type MainStackParamList = RootStackParamList;
+
+export type Photo = number; // Since require returns a number in React Native
+
+export type Profile = {
+  id: string;
   name: string;
-  photos: string[]; // Array of image URIs
+  photos: Photo[];
 };

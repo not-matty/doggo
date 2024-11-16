@@ -1,86 +1,90 @@
 // app/features/profile/ProfilePage.tsx
 
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { ProfileStackParamList } from '@/navigation/types';
-import CustomHeader from '@components/common/CustomHeader';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Image, Dimensions, ScrollView } from 'react-native';
+import { RouteProp, useRoute } from '@react-navigation/native';
+import { ProfileStackParamList, Profile } from '@navigation/types';
+import { demoProfiles } from '@data/demoProfiles';
+import { supabase } from '@services/supabase';
 
+type ProfilePageRouteProp = RouteProp<ProfileStackParamList, 'ProfilePage'>;
 
-type ProfilePageNavigationProp = StackNavigationProp<ProfileStackParamList, 'ProfilePage'>;
+const { width } = Dimensions.get('window');
+const SEARCH_BAR_HEIGHT = 70; // Must match other components
 
 const ProfilePage: React.FC = () => {
-  const navigation = useNavigation<ProfilePageNavigationProp>();
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const route = useRoute<ProfilePageRouteProp>();
+  const { userId } = route.params;
+  const [user, setUser] = useState<Profile | undefined>(undefined);
 
-  const pickImage = async () => {
-    // Request permission to access media library
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    if (permissionResult.granted === false) {
-      alert("Permission to access camera roll is required!");
-      return;
-    }
+      if (error) {
+        console.error('Error fetching user:', error);
+        // Fallback to demo profiles if needed
+        const demoUser = demoProfiles.find((profile) => profile.id === userId);
+        setUser(demoUser);
+      } else {
+        setUser(data as Profile);
+      }
+    };
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1], // Square aspect ratio
-      quality: 1,
-    });
+    fetchUser();
+  }, [userId]);
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setProfileImage(result.assets[0].uri);
-    }
-  };
-
-  const handleUsernamePress = () => {
-    // Navigate to Profile Details Page
-    navigation.navigate('ProfileDetails', { userId: '123' }); // Example userId
-  };
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.text}>Loading user...</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <CustomHeader title="Profile" showBackButton={false} />
-      <TouchableOpacity onPress={pickImage} style={styles.imageWrapper}>
-        <Image
-          source={
-            profileImage
-              ? { uri: profileImage }
-              : require('@assets/images/Default_pfp.svg.png')
-          }
-          style={styles.profileImage}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity onPress={handleUsernamePress}>
-        <Text style={styles.username}>Username</Text>
-      </TouchableOpacity>
-    </View>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Image source={user.photos[0]} style={styles.image} />
+      <View style={styles.infoContainer}>
+        <Text style={styles.name}>{user.name}</Text>
+        {/* Add more user details here */}
+      </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
+    backgroundColor: '#000',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
+    paddingTop: SEARCH_BAR_HEIGHT,
+    paddingHorizontal: 20,
   },
-  imageWrapper: {
-    marginBottom: 20,
+  image: {
+    width: width * 0.9,
+    height: width * 0.9,
+    borderRadius: 15,
+    resizeMode: 'cover',
+    marginTop: 20,
   },
-  profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,  // Circle shape
-    backgroundColor: '#ccc', // Gray background for default
+  infoContainer: {
+    marginTop: 20,
+    alignItems: 'center',
   },
-  username: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#333', // Dark text
+  name: {
+    fontSize: 28,
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  text: {
+    color: '#fff',
+    fontSize: 18,
   },
 });
 

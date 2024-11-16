@@ -1,5 +1,3 @@
-// app/layouts/GlobalLayout.tsx
-
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import CustomHeader from '@components/common/CustomHeader';
@@ -21,7 +19,7 @@ const GlobalLayout: React.FC<GlobalLayoutProps> = ({ children }) => {
   });
 
   // Define routes where the header should not be shown
-  const hideHeaderRoutes = ['Login', 'Auth'];
+  const hideHeaderRoutes = ['Login', 'AuthNavigator', 'MessagesNavigator'];
 
   const showHeader = !hideHeaderRoutes.includes(routeName);
 

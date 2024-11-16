@@ -1,14 +1,11 @@
-// app/features/home/HomePage.tsx
-
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../../navigation/types';
+import { RootStackParamList } from '@navigation/types';
 import Feather from 'react-native-vector-icons/Feather';
 import { Swipeable } from 'react-native-gesture-handler';
 
-// Define the navigation prop type for HomePage
 type HomeNavigationProp = StackNavigationProp<RootStackParamList, 'Tabs'>;
 
 const HomePage: React.FC = () => {
@@ -19,7 +16,7 @@ const HomePage: React.FC = () => {
   };
 
   const handleSwipeOpen = () => {
-    navigation.navigate('MessagesPage');  // Navigates to MessagesPage on swipe open
+    navigation.navigate('MessagesPage'); // Navigates to MessagesPage on swipe open
   };
 
   const renderRightActions = () => (
@@ -32,7 +29,7 @@ const HomePage: React.FC = () => {
     <View style={styles.container}>
       {/* Messages Icon in Top Right Corner */}
       <TouchableOpacity
-        onPress={() => navigation.navigate('MessagesPage')}  // Button to navigate to MessagesPage
+        onPress={() => navigation.navigate('MessagesPage')} // Button to navigate to MessagesPage
         style={styles.messagesIcon}
         accessibilityLabel="Navigate to Messages"
       >
@@ -42,7 +39,7 @@ const HomePage: React.FC = () => {
       {/* Swipeable Section for Main Content */}
       <Swipeable
         renderRightActions={renderRightActions}
-        onSwipeableRightOpen={handleSwipeOpen}  // Trigger navigation to MessagesPage on swipe
+        onSwipeableRightOpen={handleSwipeOpen} // Trigger navigation to MessagesPage on swipe
         overshootRight={false}
         friction={2}
       >
@@ -72,7 +69,7 @@ const styles = StyleSheet.create({
   },
   messagesIcon: {
     position: 'absolute',
-    top: 0,  // Adjusted for different devices
+    top: 10, // Adjusted for better positioning
     right: 20,
     padding: 10,
     zIndex: 1,

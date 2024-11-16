@@ -1,40 +1,61 @@
-// app/features/auth/LoginPage.tsx
+// app/features/auth/Login.tsx
 
-import React from 'react';
-import { View, Button, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import Footer from '@components/common/Footer'; // If applicable
-import globalStyles from '@styles/globalStyles';
+import React, { useState, useContext } from 'react';
+import { View, TextInput, Button, StyleSheet, Text } from 'react-native';
+import { AuthContext } from '@context/AuthContext';
 
-const LoginPage: React.FC = () => {
-  const navigation = useNavigation();
+const Login: React.FC = () => {
+  const { signIn } = useContext(AuthContext);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleLogin = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Tabs' }],
-    });
+  const handleSignIn = async () => {
+    await signIn(email, password);
   };
 
   return (
-    <View style={globalStyles.container}>
-      {/* Removed CustomHeader */}
-      <View style={styles.content}>
-        {/* Add any content you want here */}
-        {/* For example, a logo or welcome message */}
-        <Button title="Login" onPress={handleLogin} />
-      </View>
-      <Footer />
+    <View style={styles.container}>
+      <Text style={styles.title}>Login</Text>
+      <TextInput
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        style={styles.input}
+        autoCapitalize="none"
+      />
+      <TextInput
+        placeholder="Password"
+        value={password}
+        onChangeText={setPassword}
+        style={styles.input}
+        secureTextEntry
+      />
+      <Button title="Sign In" onPress={handleSignIn} />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  content: {
+  container: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    padding: 20,
+    backgroundColor: '#FFF',
+  },
+  title: {
+    fontSize: 24,
+    color: '#000',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  input: {
+    height: 50,
+    borderColor: '#555',
+    borderWidth: 1,
+    marginBottom: 15,
+    paddingHorizontal: 10,
+    color: '#000',
   },
 });
 
-export default LoginPage;
+export default Login;

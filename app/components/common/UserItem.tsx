@@ -1,79 +1,58 @@
 // app/components/common/UserItem.tsx
 
 import React from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Image, 
-  TouchableOpacity, 
-  Dimensions, 
-  FlatList 
-} from 'react-native';
+import { TouchableOpacity, View, Text, StyleSheet, Dimensions } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { ProfileStackParamList, Profile } from '@navigation/types';
+import PhotoCarousel from '@components/common/PhotoCarousel';
 
 type UserItemProps = {
-  name: string;
-  photos: any[]; // Use appropriate type for local images
-  onPress: () => void;
+  profile: Profile;
 };
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+const SEARCH_BAR_HEIGHT = 70;
 
-const UserItem: React.FC<UserItemProps> = ({ name, photos, onPress }) => {
+type NavigationProp = StackNavigationProp<ProfileStackParamList, 'ProfilePage'>;
 
-  const renderPhoto = ({ item }: { item: any }) => (
-    <Image source={item} style={styles.photo} />
-  );
+const UserItem: React.FC<UserItemProps> = ({ profile }) => {
+  const navigation = useNavigation<NavigationProp>();
+
+  const navigateToProfile = () => {
+    navigation.navigate('ProfilePage', { userId: profile.id });
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.photosContainer}>
-        <FlatList
-          data={photos}
-          renderItem={renderPhoto}
-          keyExtractor={(item, index) => `${index}`}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-        />
-        <TouchableOpacity style={styles.nameContainer} onPress={onPress}>
-          <Text style={styles.nameText}>{name}</Text>
-        </TouchableOpacity>
+    <TouchableOpacity style={styles.cardContainer} onPress={navigateToProfile} activeOpacity={0.9}>
+      <PhotoCarousel photos={profile.photos} />
+      <View style={styles.infoContainer}>
+        <Text style={styles.name}>{profile.name}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 20,
+  cardContainer: {
+    width: width,
+    height: height - SEARCH_BAR_HEIGHT - 60,
+    backgroundColor: '#000',
   },
-  photosContainer: {
-    position: 'relative',
-    width: '100%',
-    height: 200,
-    borderRadius: 15,
-    overflow: 'hidden',
-  },
-  photo: {
-    width: width - 40,
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  nameContainer: {
+  infoContainer: {
     position: 'absolute',
-    top: 10,
-    left: 10,
+    bottom: 10,
+    left: 20,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    borderRadius: 15,
   },
-  nameText: {
+  name: {
+    fontSize: 22,
     color: '#fff',
-    fontSize: 16,
     fontWeight: '600',
   },
 });
 
-export default React.memo(UserItem);
+export default UserItem;

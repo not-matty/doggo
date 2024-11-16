@@ -1,3 +1,5 @@
+// app/features/messages/MessagesPeek.tsx
+
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
@@ -9,11 +11,11 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const { width } = Dimensions.get('window');
-const PEEK_THRESHOLD = -width * 0.5; // Threshold for snapping open the peek screen
+const PEEK_THRESHOLD = -width * 0.5;
 
-// Define the context type, extending Record<string, unknown>
-interface GestureContext extends Record<string, unknown> {
+interface GestureContext {
   startX: number;
+  [key: string]: unknown; // Added index signature
 }
 
 const MessagesPeek: React.FC = () => {
@@ -24,17 +26,15 @@ const MessagesPeek: React.FC = () => {
     GestureContext
   >({
     onStart: (_, ctx) => {
-      ctx.startX = translateX.value; // TypeScript now knows startX exists on ctx
+      ctx.startX = translateX.value;
     },
     onActive: (event, ctx) => {
       translateX.value = ctx.startX + event.translationX;
     },
     onEnd: () => {
       if (translateX.value < PEEK_THRESHOLD) {
-        // Snap open
         translateX.value = withSpring(-width);
       } else {
-        // Snap back to the original position
         translateX.value = withSpring(0);
       }
     },

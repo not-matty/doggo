@@ -1,5 +1,3 @@
-// app/features/messages/MessagesPage.tsx
-
 import React from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import CustomHeader from '@components/common/CustomHeader';
