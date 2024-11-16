@@ -7,22 +7,37 @@ import {
   StyleSheet, 
   Keyboard, 
   TouchableWithoutFeedback, 
-  FlatList 
+  FlatList, 
+  Text 
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { SearchStackParamList } from '../../navigation/types';
-import Feather from 'react-native-vector-icons/Feather';
-import UserItem from '../../components/common/UserItem'; // Import UserItem
+import { SearchStackParamList, User } from '../../navigation/types';
+import UserItem from '../../components/common/UserItem';
 
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
-type User = {
-  id: number;
-  name: string;
-};
-
-const demoUsers: User[] = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, name: `person${i + 1}` }));
+const demoUsers: User[] = [
+  {
+    id: 1,
+    name: 'person1',
+    photos: [
+      require('../../assets/images/person1_1.png'),
+      require('../../assets/images/person1_2.png'),
+      require('../../assets/images/person1_3.png'),
+    ],
+  },
+  {
+    id: 2,
+    name: 'person2',
+    photos: [
+      require('../../assets/images/person2_1.png'),
+      require('../../assets/images/person2_2.png'),
+      require('../../assets/images/person2_3.png'),
+    ],
+  },
+  // Add more users with local photos
+];
 
 const SearchPage: React.FC = () => {
   const navigation = useNavigation<SearchPageNavigationProp>();
@@ -32,9 +47,14 @@ const SearchPage: React.FC = () => {
     navigation.navigate('ProfileDetails', { userId: userId.toString() });
   };
 
+  const filteredUsers = demoUsers.filter(user => 
+    user.name.toLowerCase().includes(query.toLowerCase())
+  );
+
   const renderItem = ({ item }: { item: User }) => (
     <UserItem 
       name={item.name} 
+      photos={item.photos}
       onPress={() => handleUserClick(item.id)} 
     />
   );
@@ -47,14 +67,24 @@ const SearchPage: React.FC = () => {
           style={styles.searchInput}
           value={query}
           onChangeText={setQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          returnKeyType="search"
         />
-        <FlatList
-          data={demoUsers.filter(user => user.name.toLowerCase().includes(query.toLowerCase()))}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderItem}
-          style={styles.userList}
-          keyboardDismissMode="on-drag"
-        />
+        {filteredUsers.length === 0 ? (
+          <View style={styles.noResults}>
+            <Text style={styles.noResultsText}>No users found.</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredUsers}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderItem}
+            style={styles.userList}
+            keyboardDismissMode="on-drag"
+          />
+        )}
       </View>
     </TouchableWithoutFeedback>
   );
@@ -77,6 +107,15 @@ const styles = StyleSheet.create({
   },
   userList: {
     flex: 1,
+  },
+  noResults: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noResultsText: {
+    fontSize: 18,
+    color: '#888',
   },
 });
 

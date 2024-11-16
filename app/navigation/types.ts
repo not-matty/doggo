@@ -40,3 +40,9 @@ export type ProfileStackParamList = {
   ProfileDetails: { userId: string };
   // Add other Profile stack screens here if needed
 };
+
+export type User = {
+  id: number;
+  name: string;
+  photos: string[]; // Array of image URIs
+};

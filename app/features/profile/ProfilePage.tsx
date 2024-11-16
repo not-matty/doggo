@@ -8,6 +8,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { ProfileStackParamList } from '@/navigation/types';
 import CustomHeader from '@components/common/CustomHeader';
 
+
 type ProfilePageNavigationProp = StackNavigationProp<ProfileStackParamList, 'ProfilePage'>;
 
 const ProfilePage: React.FC = () => {
