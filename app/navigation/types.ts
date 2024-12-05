@@ -14,6 +14,7 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  Register: undefined;
   // Add other Auth stack screens here (e.g., Register, ForgotPassword)
 };
 

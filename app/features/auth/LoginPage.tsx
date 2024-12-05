@@ -1,16 +1,24 @@
-// app/features/auth/Login.tsx
-
 import React, { useState, useContext } from 'react';
 import { View, TextInput, Button, StyleSheet, Text } from 'react-native';
 import { AuthContext } from '@context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { AuthStackParamList } from '@navigation/types';
+
+type AuthNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 
 const Login: React.FC = () => {
   const { signIn } = useContext(AuthContext);
+  const navigation = useNavigation<AuthNavigationProp>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const handleSignIn = async () => {
     await signIn(email, password);
+  };
+
+  const handleCreateProfile = () => {
+    navigation.navigate('Register'); // Navigate to the Register screen
   };
 
   return (
@@ -31,6 +39,10 @@ const Login: React.FC = () => {
         secureTextEntry
       />
       <Button title="Sign In" onPress={handleSignIn} />
+      {/* New button for creating a profile */}
+      <View style={{ marginTop: 20 }}>
+        <Button title="Create Profile" onPress={handleCreateProfile} />
+      </View>
     </View>
   );
 };
