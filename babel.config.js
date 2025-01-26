@@ -8,7 +8,7 @@ module.exports = function (api) {
       [
         'module-resolver',
         {
-          root: ['./doggo'],
+          root: ['./'],
           alias: {
             '@': './app',
             '@components': './app/components',
@@ -17,6 +17,7 @@ module.exports = function (api) {
             '@layouts': './app/layouts',
             '@styles': './app/styles',
             '@assets': './app/assets',
+            '@utils': './app/utils', // Add this line for utils alias
           },
         },
       ],

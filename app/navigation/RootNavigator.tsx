@@ -1,69 +1,35 @@
 // app/navigation/RootNavigator.tsx
 
-import React, { useContext, useEffect } from 'react';
+import React, { useContext } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import AuthNavigator from '@features/auth/AuthNavigator';
-import TabsNavigator from '@navigation/TabsNavigator';
-import MessagesPeek from '@features/messages/MessagesPeek';
-import MessagesNavigator from '@features/messages/MessagesNavigator';
+import MainNavigator from '@navigation/MainNavigator';
 import { RootStackParamList } from '@navigation/types';
-import GlobalLayout from '@layouts/GlobalLayout';
 import { AuthContext } from '@context/AuthContext';
-import { useNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
+import GlobalLayout from '@layouts/GlobalLayout';
 
 const RootStack = createStackNavigator<RootStackParamList>();
 
 const RootNavigator: React.FC = () => {
-  const { isAuthenticated } = useContext(AuthContext);
-  const navigationRef = useNavigationContainerRef();
-
-  useEffect(() => {
-    if (navigationRef.isReady()) {
-      if (isAuthenticated) {
-        navigationRef.reset({
-          index: 0,
-          routes: [{ name: 'TabsNavigator' }],
-        });
-      } else {
-        navigationRef.reset({
-          index: 0,
-          routes: [{ name: 'AuthNavigator' }],
-        });
-      }
-    }
-  }, [isAuthenticated, navigationRef]);
+  const { user } = useContext(AuthContext);
 
   return (
-    <GlobalLayout>
-      <RootStack.Navigator
-        initialRouteName={isAuthenticated ? 'TabsNavigator' : 'AuthNavigator'}
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <RootStack.Screen
-          name="AuthNavigator"
-          component={AuthNavigator}
-          options={{ headerShown: false }}
-        />
-        <RootStack.Screen
-          name="TabsNavigator"
-          component={TabsNavigator}
-          options={{ headerShown: false }}
-        />
-        <RootStack.Screen
-          name="MessagesPeek"
-          component={MessagesPeek}
-          options={{ headerShown: false }}
-        />
-        <RootStack.Screen
-          name="MessagesPage"
-          component={MessagesNavigator}
-          options={{ headerShown: false }}
-        />
-        {/* Add other navigators or screens as needed */}
-      </RootStack.Navigator>
-    </GlobalLayout>
+    <NavigationContainer>
+      <GlobalLayout>
+        <RootStack.Navigator
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          {user ? (
+            <RootStack.Screen name="MainNavigator" component={MainNavigator} />
+          ) : (
+            <RootStack.Screen name="AuthNavigator" component={AuthNavigator} />
+          )}
+        </RootStack.Navigator>
+      </GlobalLayout>
+    </NavigationContainer>
   );
 };
 

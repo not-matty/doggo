@@ -1,3 +1,5 @@
+// MessageBubble.tsx
+
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
@@ -30,12 +32,12 @@ const styles = StyleSheet.create({
     marginVertical: 5,
   },
   incoming: {
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#f0f0f0', // Lighter gray for incoming
     alignSelf: 'flex-start',
     borderTopLeftRadius: 0,
   },
   outgoing: {
-    backgroundColor: '#007aff',
+    backgroundColor: '#1E90FF', // Adjusted to a consistent blue shade
     alignSelf: 'flex-end',
     borderTopRightRadius: 0,
   },

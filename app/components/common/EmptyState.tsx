@@ -1,15 +1,20 @@
+// EmptyState.tsx
+
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 
-const { width, height } = Dimensions.get('window');
-const SEARCH_BAR_HEIGHT = 70; // Must match other components
+type EmptyStateProps = {
+  message?: string;
+};
 
-const EmptyState: React.FC = () => {
+const { width } = Dimensions.get('window');
+
+const EmptyState: React.FC<EmptyStateProps> = ({ message = 'No profiles found.' }) => {
   return (
     <View style={styles.container}>
       <Feather name="user-x" size={60} color="#ccc" />
-      <Text style={styles.text}>No profiles found.</Text>
+      <Text style={styles.text}>{message}</Text>
     </View>
   );
 };
@@ -17,10 +22,10 @@ const EmptyState: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     width: width,
-    height: height - SEARCH_BAR_HEIGHT - 60, // Adjusted for search bar and footer
+    flex: 1, // Allows the container to expand to available space
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#000',
+    backgroundColor: '#fff', // Changed to white for consistency
   },
   text: {
     marginTop: 20,

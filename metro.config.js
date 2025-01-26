@@ -14,6 +14,7 @@ defaultConfig.resolver.extraNodeModules = {
   '@data': './app/data',
   '@assets': './app/assets',
   '@services': './app/services',
+  '@utils': './app/utils',
 };
 
 module.exports = defaultConfig;

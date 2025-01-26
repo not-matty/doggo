@@ -1,24 +1,30 @@
+// PhotoCarousel.tsx
+
 import React from 'react';
 import { FlatList, Image, Dimensions, StyleSheet } from 'react-native';
 import { Photo } from '@navigation/types';
 
 type PhotoCarouselProps = {
-  photos: any[]; // Adjust type based on your photo implementation
+  photos: Photo[]; // Using the Photo type for better type safety
 };
 
 const { width, height } = Dimensions.get('window');
-const SEARCH_BAR_HEIGHT = 70; // Must match the height used in SearchPage
+const SEARCH_BAR_HEIGHT = 70; // Ensure this matches your app's layout or pass as prop
 
 const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ photos }) => {
   return (
     <FlatList
       data={photos}
-      keyExtractor={(item, index) => index.toString()}
+      keyExtractor={(item) => item.id} // Assuming each photo has a unique 'id'
       horizontal
       pagingEnabled
       showsHorizontalScrollIndicator={false}
       renderItem={({ item }) => (
-        <Image source={item} style={styles.image} />
+        <Image
+          source={{ uri: item.uri }}
+          style={styles.image}
+          accessibilityLabel={`Photo of ${item.userId}`} // Adjust as needed
+        />
       )}
       // Prevent vertical scrolling inside the horizontal FlatList
       nestedScrollEnabled={true}
@@ -34,4 +40,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PhotoCarousel;
+export default React.memo(PhotoCarousel); // Using React.memo for performance optimization

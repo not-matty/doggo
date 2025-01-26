@@ -32,6 +32,9 @@
       ],
       "@services/*": [
         "services/*"
+      ],
+      "@utils/*": [
+        "app/utils/*"
       ]
     },
     "moduleResolution": "node",

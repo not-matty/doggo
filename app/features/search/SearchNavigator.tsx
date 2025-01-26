@@ -3,7 +3,7 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import SearchPage from './SearchPage';
-import ProfileDetailsPage from '../profile/ProfileDetailsPage';
+import ProfileDetailsPage from '../profile/screens/ProfileDetailsScreen';
 import { SearchStackParamList } from '@navigation/types';
 
 const SearchStack = createStackNavigator<SearchStackParamList>();
