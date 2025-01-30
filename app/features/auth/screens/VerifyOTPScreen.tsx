@@ -18,7 +18,7 @@ type Props = {
 };
 
 const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
-  const { verifyOTP } = useContext(AuthContext);
+  const { verifyOtp } = useContext(AuthContext); // Corrected to 'verifyOtp'
   const navigation = useNavigation<VerifyOTPScreenNavigationProp>();
   const { phone } = route.params;
 
@@ -31,16 +31,16 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
     }
 
     try {
-      await verifyOTP(phone, token);
+      await verifyOtp(phone, token); // Corrected to 'verifyOtp'
       // Upon successful verification, the AuthContext's listener will update the user state,
       // triggering RootNavigator to navigate to MainNavigator (Home screen)
     } catch (error: any) {
       console.error('OTP Verification Error:', error);
       let message = 'An error occurred during OTP verification.';
 
-      if (error.status === 400) {
+      if (error?.status === 400) {
         message = 'Invalid OTP. Please try again.';
-      } else if (error.status === 404) {
+      } else if (error?.status === 404) {
         message = 'OTP not found. Please request a new one.';
       }
 

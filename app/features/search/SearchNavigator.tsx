@@ -2,26 +2,17 @@
 
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import SearchPage from './SearchPage';
-import ProfileDetailsPage from '../profile/screens/ProfileDetailsScreen';
 import { SearchStackParamList } from '@navigation/types';
+import SearchPage from './SearchPage';
+import ProfileDetailsScreen from '@features/profile/screens/ProfileDetailsScreen';
 
 const SearchStack = createStackNavigator<SearchStackParamList>();
 
 const SearchNavigator: React.FC = () => {
   return (
-    <SearchStack.Navigator>
-      <SearchStack.Screen
-        name="SearchPage"
-        component={SearchPage}
-        options={{ headerShown: false }}
-      />
-      <SearchStack.Screen
-        name="ProfileDetails"
-        component={ProfileDetailsPage}
-        options={{ headerShown: false }}
-      />
-      {/* Add other search-related screens here if needed */}
+    <SearchStack.Navigator screenOptions={{ headerShown: false }}>
+      <SearchStack.Screen name="SearchPage" component={SearchPage} />
+      <SearchStack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
     </SearchStack.Navigator>
   );
 };

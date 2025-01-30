@@ -14,7 +14,7 @@ const CustomHeader: React.FC<CustomHeaderProps> = () => {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         {/* Optional Icon */}
-        <Feather name="camera" size={24} color="#000" style={styles.icon} />
+        <Feather name="camera" size={24} color="#ccc" style={styles.icon} />
         {/* "doggo" Text */}
         <Text style={styles.title}>doggo</Text>
       </View>
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000', // Adjust text color as needed
+    color: '#ccc', // Adjust text color as needed
   },
 });
 

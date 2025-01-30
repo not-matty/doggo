@@ -19,6 +19,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
 import CustomHeader from '@components/common/CustomHeader'; // Ensure this is correctly imported
 import Footer from '@components/common/Footer'; // Optional: Import Footer if used
+import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
 
 type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 
@@ -26,17 +27,25 @@ const LoginScreen: React.FC = () => {
   const { signInWithPassword } = useContext(AuthContext);
   const navigation = useNavigation<LoginScreenNavigationProp>();
 
-  // Initialize phone with '+1 ' to include the country code
-  const [phone, setPhone] = useState('+1 ');
+  // Initialize with default country (e.g., United States)
+  const [countryCode, setCountryCode] = useState<CountryCode>('US');
+  const [country, setCountry] = useState<Country | null>(null);
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [withCountryNameButton, setWithCountryNameButton] = useState(false); // Optional: Show country name
+
+  const onSelect = (selectedCountry: Country) => {
+    setCountryCode(selectedCountry.cca2);
+    setCountry(selectedCountry);
+  };
 
   const handleSignIn = async () => {
-    // Trim whitespace from phone and password
     const trimmedPhone = phone.trim();
     const trimmedPassword = password.trim();
+    const fullPhoneNumber = `+${country?.callingCode[0] || '1'}${trimmedPhone}`;
 
     // Basic validation
-    if (trimmedPhone.length <= 3) { // '+1 ' is 3 characters
+    if (trimmedPhone.length === 0) {
       Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
       return;
     }
@@ -47,7 +56,7 @@ const LoginScreen: React.FC = () => {
     }
 
     try {
-      await signInWithPassword(trimmedPhone, trimmedPassword);
+      await signInWithPassword(fullPhoneNumber, trimmedPassword);
       // The AuthContext's listener will navigate to MainNavigator upon successful sign-in
     } catch (error: any) {
       console.error(error);
@@ -83,15 +92,32 @@ const LoginScreen: React.FC = () => {
             {/* Phone Number Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Phone Number</Text>
-              <TextInput
-                placeholder="Enter your phone number"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                style={styles.input}
-                placeholderTextColor="#888"
-                maxLength={14} // Adjust based on your requirements
-              />
+              <View style={styles.phoneInputContainer}>
+                <CountryPicker
+                  {...{
+                    countryCode,
+                    withFilter: true,
+                    withFlag: true,
+                    withCallingCode: true,
+                    withEmoji: true,
+                    onSelect: onSelect,
+                    withCountryNameButton,
+                  }}
+                  containerButtonStyle={styles.countryPicker}
+                />
+                <Text style={styles.callingCode}>
+                  +{country?.callingCode[0] || '1'}
+                </Text>
+                <TextInput
+                  placeholder="Enter your phone number"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  style={styles.phoneInput}
+                  placeholderTextColor="#888"
+                  maxLength={15} // Adjust based on your requirements
+                />
+              </View>
             </View>
 
             {/* Password Input */}
@@ -158,6 +184,29 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 8,
     fontWeight: '600',
+  },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  countryPicker: {
+    marginRight: 10,
+  },
+  callingCode: {
+    fontSize: 16,
+    color: '#000',
+    marginRight: 10,
+  },
+  phoneInput: {
+    flex: 1,
+    height: 50,
+    borderColor: '#ddd',
+    borderWidth: 1,
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    fontSize: 16,
+    color: '#000',
+    backgroundColor: '#f9f9f9',
   },
   input: {
     height: 50,

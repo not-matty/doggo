@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Image, Dimensions, ScrollView } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
-import { ProfileStackParamList, Profile } from '@navigation/types';
+import { ProfileStackParamList, User } from '@navigation/types';
 import { demoProfiles } from '@data/demoProfiles';
 import { supabase } from '@services/supabase';
 
@@ -15,7 +15,7 @@ const SEARCH_BAR_HEIGHT = 70; // Must match other components
 const ProfilePage: React.FC = () => {
   const route = useRoute<ProfilePageRouteProp>();
   const { userId } = route.params;
-  const [user, setUser] = useState<Profile | undefined>(undefined);
+  const [user, setUser] = useState<User | undefined>(undefined);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -31,7 +31,7 @@ const ProfilePage: React.FC = () => {
         const demoUser = demoProfiles.find((profile) => profile.id === userId);
         setUser(demoUser);
       } else {
-        setUser(data as Profile);
+        setUser(data as User);
       }
     };
 

@@ -11,39 +11,33 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Platform,
-  KeyboardAvoidingView,
-  TouchableWithoutFeedback,
-  Keyboard,
 } from 'react-native';
-import { launchImageLibrary, Asset } from 'react-native-image-picker'; // Native photo picker
-import { supabase } from '@services/supabase'; // Correctly imported Supabase client
-import { AuthContext } from '@context/AuthContext'; // Ensure AuthContext is correctly imported
-import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { MainStackParamList } from '@navigation/types'; // Adjust based on your navigation setup
-import Feather from 'react-native-vector-icons/Feather'; // Ensure Feather is installed
-
-type AddPhotoScreenNavigationProp = NavigationProp<MainStackParamList, 'AddPhoto'>;
+import { launchImageLibrary, Asset } from 'react-native-image-picker';
+import { supabase } from '@services/supabase';
+import { AuthContext } from '@context/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+import Feather from 'react-native-vector-icons/Feather';
 
 const AddPhotoScreen: React.FC = () => {
-  const { user } = useContext(AuthContext); // Ensure AuthContext provides 'user'
-  const navigation = useNavigation<AddPhotoScreenNavigationProp>();
-  const [selectedImage, setSelectedImage] = useState<Asset | null>(null);
-  const [uploading, setUploading] = useState<boolean>(false);
+  const { user } = useContext(AuthContext);
+  const navigation = useNavigation();
 
-  // Function to handle image selection
+  const [selectedImage, setSelectedImage] = useState<Asset | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Open the user’s photo library
   const pickImage = async () => {
     try {
-      console.log('Pick Image button pressed'); // Debugging line
+      // Display a debug message to confirm button press
+      console.log('Pick Image button pressed');
 
-      const options = {
-        mediaType: 'photo' as const,
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
         includeBase64: false,
-      };
-
-      const result = await launchImageLibrary(options);
+      });
 
       if (result.didCancel) {
-        console.log('User cancelled image picker');
+        console.log('User cancelled picker');
         return;
       } else if (result.errorCode) {
         console.log('Image Picker Error:', result.errorMessage);
@@ -53,112 +47,97 @@ const AddPhotoScreen: React.FC = () => {
         setSelectedImage(result.assets[0]);
         console.log('Image selected:', result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Error in pickImage:', error);
-      Alert.alert('Error', 'An unexpected error occurred while selecting the image.');
+    } catch (err) {
+      console.error('pickImage error:', err);
+      Alert.alert('Error', 'Unexpected error opening image picker.');
     }
   };
 
-  // Function to handle image upload
+  // Upload the image to Supabase
   const handleUpload = async () => {
-    if (!selectedImage || !selectedImage.uri) {
+    if (!selectedImage?.uri) {
       Alert.alert('No Image Selected', 'Please select an image to upload.');
       return;
     }
-
     setUploading(true);
 
     try {
-      // Generate a unique file name using user ID and timestamp
-      const fileName = `${user?.id}-${Date.now()}.${selectedImage.uri.split('.').pop()}`;
+      const uri = selectedImage.uri;
+      // Generate a unique file name
+      const fileExt = uri.split('.').pop() || 'jpg';
+      const fileName = `${user?.id}-${Date.now()}.${fileExt}`;
 
-      // Upload the image to Supabase Storage
-      const { error: uploadError } = await supabase
-        .storage
-        .from('photos') // Ensure you have a 'photos' bucket in Supabase Storage
-        .upload(fileName, selectedImage.uri, {
+      // Convert the image to a Blob (this may fail if URI is "ph://")
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(fileName, blob, {
           contentType: selectedImage.type || 'image/jpeg',
           upsert: false,
         });
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      // Retrieve the public URL of the uploaded image
-      const { data } = supabase
-        .storage
+      // Get public URL
+      const { data: urlData } = supabase.storage
         .from('photos')
         .getPublicUrl(fileName);
 
-      if (!data || !data.publicUrl) {
-        throw new Error('Failed to retrieve public URL.');
-      }
+      if (!urlData?.publicUrl) throw new Error('Failed to retrieve public URL');
+      const publicUrl = urlData.publicUrl;
 
-      const publicUrl = data.publicUrl;
-
-      // Insert a record into the 'photos' table with the image URL and user ID
+      // Insert record in "photos" table
       const { error: insertError } = await supabase
         .from('photos')
-        .insert([
-          { url: publicUrl, user_id: user?.id }, // Adjust fields as per your table schema
-        ]);
+        .insert([{ url: publicUrl, user_id: user?.id }]);
 
-      if (insertError) {
-        throw insertError;
-      }
+      if (insertError) throw insertError;
 
       Alert.alert('Success', 'Photo uploaded successfully!');
-      navigation.goBack(); // Navigate back to HomeScreen
+      navigation.goBack();
     } catch (error: any) {
-      console.error('Error uploading photo:', error);
-      Alert.alert('Upload Error', error.message || 'Failed to upload photo. Please try again.');
+      console.error('Upload error:', error);
+      Alert.alert('Upload Error', error.message || 'Photo upload failed.');
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Pick Image Button */}
+        <TouchableOpacity style={styles.pickButton} onPress={pickImage}>
+          <Feather name="upload" size={20} color="#fff" />
+          <Text style={styles.pickButtonText}>Pick a Photo</Text>
+        </TouchableOpacity>
 
-        <KeyboardAvoidingView
-          style={styles.container}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        {/* Preview the selected image */}
+        {selectedImage?.uri && (
+          <Image
+            source={{ uri: selectedImage.uri }}
+            style={styles.image}
+            resizeMode="cover"
+          />
+        )}
+
+        {/* Upload Button */}
+        <TouchableOpacity
+          style={styles.uploadButton}
+          onPress={handleUpload}
+          disabled={uploading}
         >
-          <View style={styles.formContainer}>
-            {/* Pick Image Button */}
-            <TouchableOpacity
-              style={styles.pickButton}
-              onPress={pickImage}
-              accessibilityLabel="Pick an Image"
-            >
-              <Feather name="upload" size={20} color="#fff" />
-              <Text style={styles.pickButtonText}>Pick a Photo</Text>
-            </TouchableOpacity>
-
-            {/* Display Selected Image */}
-            {selectedImage && selectedImage.uri && (
-              <Image source={{ uri: selectedImage.uri }} style={styles.image} />
-            )}
-
-            {/* Upload Button */}
-            <TouchableOpacity
-              style={styles.uploadButton}
-              onPress={handleUpload}
-              disabled={uploading}
-              accessibilityLabel="Upload Photo"
-            >
-              {uploading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.uploadButtonText}>Upload Photo</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </TouchableWithoutFeedback>
+          {uploading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.uploadButtonText}>Upload Photo</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 };
 
@@ -169,64 +148,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  header: {
-    position: 'absolute',
-    top: 0,
-    left: 20,
-    right: 20,
-    height: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'transparent', // Transparent background
-    zIndex: 1000,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginLeft: 10,
-    color: '#000',
-  },
   container: {
     flex: 1,
-    justifyContent: 'center', // Center vertically
-    paddingHorizontal: 30,
-    paddingTop: 60, // To prevent overlap with header
-  },
-  formContainer: {
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 16,
   },
   pickButton: {
     flexDirection: 'row',
     backgroundColor: '#000',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 25,
+    padding: 15,
+    borderRadius: 8,
     alignItems: 'center',
     marginBottom: 20,
   },
   pickButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
     marginLeft: 10,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   image: {
-    width: 200,
-    height: 200,
+    width: 220,
+    height: 220,
     borderRadius: 10,
     marginBottom: 20,
   },
   uploadButton: {
     backgroundColor: '#000',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 25,
+    padding: 15,
+    borderRadius: 8,
+    width: '60%',
     alignItems: 'center',
-    width: '100%',
   },
   uploadButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
 });

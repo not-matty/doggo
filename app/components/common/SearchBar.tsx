@@ -1,4 +1,4 @@
-// SearchBar.tsx
+// app/components/common/SearchBar.tsx
 
 import React from 'react';
 import { View, TextInput, StyleSheet, Animated, Platform, TouchableOpacity } from 'react-native';
@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 type SearchBarProps = {
   query: string;
   setQuery: (text: string) => void;
-  translateY?: Animated.Value; // Made optional if internal animations are desired
+  translateY: Animated.Value; // Required
 };
 
 const SearchBar: React.FC<SearchBarProps> = ({ query, setQuery, translateY }) => {
@@ -17,7 +17,15 @@ const SearchBar: React.FC<SearchBarProps> = ({ query, setQuery, translateY }) =>
   const clearSearch = () => setQuery('');
 
   return (
-    <Animated.View style={[styles.container, { transform: [{ translateY }], top: insets.top + 10 }]}>
+    <Animated.View
+      style={[
+        styles.container,
+        { 
+          transform: [{ translateY }], 
+          top: insets.top, // Adjust as needed
+        }
+      ]}
+    >
       <Feather name="search" size={20} color="#888" style={styles.icon} />
       <TextInput
         placeholder="Search"
@@ -39,6 +47,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ query, setQuery, translateY }) =>
     </Animated.View>
   );
 };
+
+export default SearchBar;
 
 const styles = StyleSheet.create({
   container: {
@@ -67,5 +77,3 @@ const styles = StyleSheet.create({
     color: '#000', // Ensuring text color is visible
   },
 });
-
-export default SearchBar;

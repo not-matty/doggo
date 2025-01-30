@@ -27,6 +27,7 @@ const RegisterScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [username, setUsername] = useState(''); // Added username state
   const [loading, setLoading] = useState<boolean>(false);
 
   const phoneInputRef = useRef<TextInput>(null);
@@ -51,6 +52,11 @@ const RegisterScreen: React.FC = () => {
       return;
     }
 
+    if (!username.trim()) {
+      Alert.alert('Missing Information', 'Please enter a username.');
+      return;
+    }
+
     if (!phone.trim()) {
       Alert.alert('Missing Information', 'Please enter your phone number.');
       return;
@@ -71,7 +77,7 @@ const RegisterScreen: React.FC = () => {
     setLoading(true);
 
     try {
-      await signUpWithPhone(phone, password, name);
+      await signUpWithPhone(phone, password, name, username); // Pass username
       // The AuthContext's listener will navigate to VerifyOTP upon successful sign-up
     } catch (error: any) {
       console.error(error);
@@ -80,7 +86,7 @@ const RegisterScreen: React.FC = () => {
       if (error?.status === 400) {
         message = 'Invalid phone number or password.';
       } else if (error?.status === 409) {
-        message = 'Phone number already in use.';
+        message = 'Phone number or username already in use.';
       }
 
       Alert.alert('Registration Error', message);
@@ -108,6 +114,21 @@ const RegisterScreen: React.FC = () => {
           onChangeText={setName}
           style={styles.input}
           placeholderTextColor="#888"
+          autoCapitalize="words"
+          accessibilityLabel="Name Input"
+        />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>Username</Text>
+        <TextInput
+          placeholder="Choose a username"
+          value={username}
+          onChangeText={setUsername}
+          style={styles.input}
+          placeholderTextColor="#888"
+          autoCapitalize="none"
+          accessibilityLabel="Username Input"
         />
       </View>
 
@@ -122,6 +143,7 @@ const RegisterScreen: React.FC = () => {
           style={styles.input}
           placeholderTextColor="#888"
           maxLength={16} // +1 followed by 14 characters (including space)
+          accessibilityLabel="Phone Number Input"
         />
       </View>
 
@@ -134,6 +156,7 @@ const RegisterScreen: React.FC = () => {
           secureTextEntry
           style={styles.input}
           placeholderTextColor="#888"
+          accessibilityLabel="Password Input"
         />
       </View>
 
@@ -146,6 +169,7 @@ const RegisterScreen: React.FC = () => {
           secureTextEntry
           style={styles.input}
           placeholderTextColor="#888"
+          accessibilityLabel="Confirm Password Input"
         />
       </View>
 
@@ -153,6 +177,7 @@ const RegisterScreen: React.FC = () => {
         style={styles.registerButton}
         onPress={handleSignUp}
         disabled={loading}
+        accessibilityLabel="Register Button"
       >
         {loading ? (
           <ActivityIndicator color="#fff" />
@@ -161,7 +186,7 @@ const RegisterScreen: React.FC = () => {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.loginButton} onPress={handleNavigateToLogin}>
+      <TouchableOpacity style={styles.loginButton} onPress={handleNavigateToLogin} accessibilityLabel="Login Button">
         <Text style={styles.loginButtonText}>Login</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
