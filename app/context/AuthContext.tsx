@@ -1,224 +1,164 @@
 // app/context/AuthContext.tsx
 
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '@navigation/types';
+import { Alert, Platform } from 'react-native';
+import * as Contacts from 'expo-contacts';
 import { supabase } from '@services/supabase';
-import Contacts from 'react-native-contacts';
-import { Alert, Platform, PermissionsAndroid } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { AuthStackParamList } from '@navigation/types';
-import { StackNavigationProp } from '@react-navigation/stack';
+import { User } from '@navigation/types';
+import { navigate } from '@navigation/RootNavigation'; // Global navigation helper
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Define the shape of our AuthContext
 type AuthContextType = {
   user: User | null;
-  signInWithPassword: (phone: string, password: string) => Promise<void>;
+  loading: boolean;
+  signInWithPhone: (phone: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  verifyOtp: (phone: string, token: string) => Promise<void>;
   signUpWithPhone: (
     phone: string,
     password: string,
     name: string,
     username: string
   ) => Promise<void>;
-  verifyOtp: (phone: string, token: string) => Promise<void>;
-  signOut: () => Promise<void>;
   isUsernameTaken: (username: string) => Promise<boolean>;
-  updateProfile: (profile: Partial<User>) => Promise<void>; // Added
-  // ...other methods
+  updateProfile: (profile: Partial<User>) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextType>({
   user: null,
-  signInWithPassword: async () => {},
-  signUpWithPhone: async () => {},
-  verifyOtp: async () => {},
-  signOut: async () => {},
+  loading: true,
+  signInWithPhone: async () => { },
+  signOut: async () => { },
+  verifyOtp: async () => { },
+  signUpWithPhone: async () => { },
   isUsernameTaken: async () => false,
-  updateProfile: async () => {},
+  updateProfile: async () => { },
 });
 
 type AuthProviderProps = {
   children: ReactNode;
 };
 
-type AuthNavigationProp = StackNavigationProp<AuthStackParamList>;
+// Add this type definition
+interface ContactInfo {
+  name: string;
+  phoneNumber: string;
+  givenName?: string;
+  familyName?: string;
+}
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const navigation = useNavigation<AuthNavigationProp>();
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
-          console.log('Authenticated User ID:', session.user.id);
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          if (error) {
-            console.error(
-              'Error fetching profile for user ID:',
-              session.user.id,
-              error
-            );
-            setUser(null);
-
-            // Navigate to CompleteProfile
-            navigation.navigate('CompleteProfile');
-          } else {
-            const fetchedUser = data as User;
-            setUser(fetchedUser);
-            console.log('Fetched Profile:', fetchedUser);
-
-            // Import contacts if it's the first login
-            await importContactsIfFirstLogin(fetchedUser);
-          }
-        } else {
-          console.log('User signed out');
-          setUser(null);
-        }
-      }
-    );
-
-    // Cleanup subscription on unmount
-    return () => {
-      authListener?.subscription?.unsubscribe();
-    };
-  }, [navigation]);
-
-  const signInWithPassword = async (phone: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      phone: phone.toString(),
-      password,
-    });
-
-    if (error) {
-      console.error('Sign In Error:', error);
-      throw error;
+  // --------------------------
+  // Helper: Normalize Phone Number
+  // --------------------------
+  // Removes all non-digit characters and, if the number is 10 digits (US), prepends "1"
+  const normalizePhoneNumber = (phone: string): string => {
+    let normalized = phone.replace(/[^0-9]/g, '');
+    if (normalized.length === 10) {
+      normalized = '1' + normalized;
     }
-
-    console.log('User signed in');
+    return normalized;
   };
 
-  const signUpWithPhone = async (
-    phone: string,
-    password: string,
-    name: string,
-    username: string
-  ) => {
+  // --------------------------
+  // Helper: Request Contacts Permission
+  // --------------------------
+  const requestContactsPermission = async (): Promise<boolean> => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-        phone: phone.toString(),
-        password,
-      });
-
-      if (error) {
-        console.error('Sign Up Error:', error);
-        throw error;
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status === 'granted') {
+        return true;
       }
 
-      console.log('User signed up:', data.user?.id);
+      Alert.alert(
+        'Contacts Permission Required',
+        'Please grant access to your contacts to find your friends on doggo.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          {
+            text: 'Grant Access',
+            onPress: async () => {
+              const { status: newStatus } = await Contacts.requestPermissionsAsync();
+              return newStatus === 'granted';
+            }
+          }
+        ]
+      );
+      return false;
+    } catch (error) {
+      console.error('Error requesting contacts permission:', error);
+      return false;
+    }
+  };
 
-      // Insert into 'profiles' table with username
-      const { error: insertError } = await supabase
+  // Add this new function
+  const createPlaceholderProfile = async (contact: ContactInfo) => {
+    try {
+      const normalizedPhone = normalizePhoneNumber(contact.phoneNumber);
+
+      // Check if a profile already exists for this phone number
+      const { data: existingProfile, error: checkError } = await supabase
         .from('profiles')
-        .insert([{ id: data.user?.id, name, phone, username }]); // Added username
+        .select('id')
+        .eq('phone', normalizedPhone)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking profile:', checkError);
+        return null;
+      }
+
+      // If profile exists, return it
+      if (existingProfile) {
+        return existingProfile.id;
+      }
+
+      // Create profile with only the required fields
+      const profileData = {
+        name: contact.name || `${contact.givenName || ''} ${contact.familyName || ''}`.trim() || 'Unknown User',
+        phone: normalizedPhone,
+        username: `user${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // Create new profile
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert([profileData])
+        .select('id')
+        .single();
 
       if (insertError) {
-        console.error('Profile Insertion Error:', insertError);
+        console.error('Profile creation error:', insertError);
         throw insertError;
       }
-
-      console.log('Profile created for user:', data.user?.id);
+      return newProfile.id;
     } catch (error) {
-      console.error('Sign Up Flow Error:', error);
-      throw error;
+      console.error('Error creating placeholder profile:', error);
+      return null;
     }
   };
 
-  const verifyOtp = async (phone: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      phone: phone.toString(),
-      token,
-      type: 'sms',
-    });
-
-    if (error) {
-      console.error('OTP Verification Error:', error);
-      throw error;
-    }
-
-    console.log('OTP verified successfully');
-  };
-
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Sign Out Error:', error);
-      throw error;
-    }
-
-    console.log('User signed out successfully');
-  };
-
-  const isUsernameTaken = async (username: string): Promise<boolean> => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('username', username)
-      .single();
-
-    if (error && error.code === 'PGRST116') {
-      // No matching username found
-      return false;
-    } else if (data) {
-      // Username exists
-      return true;
-    } else {
-      // Some other error occurred
-      console.error('Error checking username:', error);
-      throw error;
-    }
-  };
-
-  const updateProfile = async (profile: Partial<User>) => {
-    if (!user) {
-      throw new Error('No authenticated user.');
-    }
-
-    const { id, ...updates } = profile;
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id);
-
-    if (error) {
-      console.error('Update Profile Error:', error);
-      throw error;
-    }
-
-    // Update local user state
-    setUser((prevUser) => (prevUser ? { ...prevUser, ...updates } : prevUser));
-  };
-
-  // Function to handle contacts import
+  // --------------------------
+  // Function: Import Contacts If First Login
+  // --------------------------
+  // Checks if contacts are already imported; if not, requests permission and imports them.
   const importContactsIfFirstLogin = async (currentUser: User) => {
     try {
-      // Check if contacts are already imported
+      // Check if contacts have already been imported for this user
       const { data: existingContacts, error: fetchError } = await supabase
         .from('contacts')
         .select('*')
         .eq('user_id', currentUser.id);
 
-      if (fetchError) {
-        console.error('Error fetching existing contacts:', fetchError);
-        return;
-      }
+      if (fetchError) throw fetchError;
 
       if (existingContacts && existingContacts.length > 0) {
-        // Contacts already imported
         console.log('Contacts already imported for user:', currentUser.id);
         return;
       }
@@ -226,121 +166,288 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Request permission to access contacts
       const permissionGranted = await requestContactsPermission();
       if (!permissionGranted) {
-        Alert.alert('Contacts Permission', 'Cannot import contacts without permission.');
+        console.log('Contacts permission not granted');
         return;
       }
 
       // Fetch contacts from device
-      const deviceContacts = await Contacts.getAll();
+      const { data: deviceContacts } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+      });
 
-      const contactUserIds: string[] = [];
+      if (deviceContacts.length === 0) {
+        console.log('No contacts found');
+        return;
+      }
+
+      const contactsToProcess = [];
 
       for (const contact of deviceContacts) {
         if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
           for (const phone of contact.phoneNumbers) {
-            const normalizedPhone = normalizePhoneNumber(phone.number);
+            if (phone.number) {
+              const contactInfo = {
+                name: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
+                phoneNumber: phone.number,
+                givenName: contact.firstName,
+                familyName: contact.lastName,
+              };
 
-            // Query 'profiles' table to find user with this phone number
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('id')
-              .eq('phone', normalizedPhone)
-              .single();
+              // Create or get profile ID for this contact
+              const profileId = await createPlaceholderProfile(contactInfo);
 
-            if (error) {
-              // User with this phone number doesn't exist or other error
-              console.log(`No user found with phone: ${normalizedPhone}`);
-              continue;
-            }
-
-            if (data && data.id !== currentUser.id) {
-              contactUserIds.push(data.id);
+              if (profileId && profileId !== currentUser.id) {
+                contactsToProcess.push({
+                  user_id: currentUser.id,
+                  contact_user_id: profileId,
+                  created_at: new Date().toISOString(),
+                });
+              }
             }
           }
         }
       }
 
-      if (contactUserIds.length === 0) {
-        Alert.alert('No Contacts Found', 'No matching contacts found in our app.');
+      if (contactsToProcess.length === 0) {
+        console.log('No valid contacts to import');
         return;
       }
 
-      // Remove duplicates
-      const uniqueContactUserIds = Array.from(new Set(contactUserIds));
+      // Insert all contacts
+      const { error: insertError } = await supabase
+        .from('contacts')
+        .insert(contactsToProcess);
 
-      // Insert contacts into 'contacts' table
-      const contactsToInsert = uniqueContactUserIds.map((contactId) => ({
-        user_id: currentUser.id,
-        contact_user_id: contactId,
-      }));
+      if (insertError) throw insertError;
 
-      const { error: insertError } = await supabase.from('contacts').insert(contactsToInsert);
-
-      if (insertError) {
-        console.error('Error inserting contacts:', insertError);
-        throw insertError;
-      }
-
-      Alert.alert('Contacts Imported', 'Your contacts have been successfully imported.');
-      console.log('Contacts imported successfully for user:', currentUser.id);
-    } catch (error: any) {
-      console.error('Error importing contacts:', error);
-      Alert.alert('Error', 'Failed to import contacts.');
-    }
-  };
-
-  // Function to request contacts permission
-  const requestContactsPermission = async (): Promise<boolean> => {
-    try {
-      if (Platform.OS === 'ios') {
-        const permission = await Contacts.requestPermission();
-        return permission === 'authorized';
-      } else if (Platform.OS === 'android') {
-        const permission = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
-          {
-            title: 'Contacts Permission',
-            message: 'This app would like to view your contacts.',
-            buttonPositive: 'Please accept',
-          }
-        );
-        return permission === PermissionsAndroid.RESULTS.GRANTED;
-      }
-      return false;
+      console.log(`Imported ${contactsToProcess.length} contacts for user:`, currentUser.id);
     } catch (error) {
-      console.error('Permission request error:', error);
-      return false;
+      console.error('Error importing contacts:', error);
     }
   };
 
-  // Function to normalize phone numbers
-  const normalizePhoneNumber = (phone: string): string => {
-    // Remove all non-numeric characters
-    let normalized = phone.replace(/[^0-9]/g, '');
+  // --------------------------
+  // Listen for Authentication State Changes
+  // --------------------------
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        console.log('Authenticated User ID:', session.user.id);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
 
-    // Handle country codes
-    // Example: Ensure it starts with '1' for USA
-    if (normalized.length === 10) {
-      normalized = '1' + normalized;
+        if (error) {
+          console.error('Error fetching profile for user ID:', session.user.id, error);
+          setUser(null);
+          // Navigate to CompleteProfile (since profile isn't complete)
+          navigate('CompleteProfile');
+        } else {
+          const fetchedUser = data as User;
+          setUser(fetchedUser);
+          console.log('Fetched Profile:', fetchedUser);
+          // Import contacts if this is the first login
+          await importContactsIfFirstLogin(fetchedUser);
+        }
+      } else {
+        console.log('User signed out');
+        setUser(null);
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const session = await supabase.auth.getSession();
+      if (session.data.session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.data.session.user.id)
+          .single();
+
+        if (profile) {
+          setUser(profile);
+          await importContactsIfFirstLogin(profile);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking user:', error);
+    } finally {
+      setLoading(false);
     }
-
-    return normalized;
   };
 
+  const signInWithPhone = async (phone: string) => {
+    // Demo bypass
+    if (phone === '+14082300023') {
+      return;
+    }
+
+    try {
+      const normalizedPhone = normalizePhoneNumber(phone);
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalizedPhone,
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      console.error('Sign in error:', error);
+      throw new Error(error.message);
+    }
+  };
+
+  const verifyOtp = async (phone: string, token: string) => {
+    // Demo bypass
+    if (phone === '+14082300023' && token === '123456') {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('phone', phone)
+        .single();
+
+      if (profile) {
+        setUser(profile);
+        await AsyncStorage.setItem('userPhone', phone);
+        await AsyncStorage.setItem('userId', profile.id);
+        return;
+      }
+    }
+
+    try {
+      const normalizedPhone = normalizePhoneNumber(phone);
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: normalizedPhone,
+        token,
+        type: 'sms',
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Store credentials
+        await AsyncStorage.setItem('userPhone', normalizedPhone);
+        await AsyncStorage.setItem('userId', data.user.id);
+
+        // Check if profile exists
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        if (profile) {
+          setUser(profile);
+          await importContactsIfFirstLogin(profile);
+        }
+      }
+    } catch (error: any) {
+      console.error('OTP verification error:', error);
+      throw new Error(error.message);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      await AsyncStorage.removeItem('userPhone');
+      await AsyncStorage.removeItem('userId');
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setUser(null);
+    } catch (error: any) {
+      console.error('Sign out error:', error);
+      throw new Error(error.message);
+    }
+  };
+
+  // --------------------------
+  // Provide AuthContext Value
+  // --------------------------
   return (
     <AuthContext.Provider
       value={{
         user,
-        signInWithPassword,
-        signUpWithPhone,
-        verifyOtp,
+        loading,
+        signInWithPhone,
         signOut,
-        isUsernameTaken,
-        updateProfile, // Exposed
-        // ...other methods
+        verifyOtp,
+        signUpWithPhone: async (phone, password, name, username) => {
+          try {
+            const normalizedPhone = normalizePhoneNumber(phone);
+            const { data, error } = await supabase.auth.signUp({
+              phone: normalizedPhone,
+              password,
+            });
+            if (error) throw error;
+
+            if (data.user) {
+              const { error: insertError } = await supabase
+                .from('profiles')
+                .insert([{
+                  id: data.user.id,
+                  name,
+                  phone: normalizedPhone,
+                  username,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                }]);
+
+              if (insertError) throw insertError;
+            }
+          } catch (error: any) {
+            console.error('Sign up error:', error);
+            throw new Error(error.message);
+          }
+        },
+        isUsernameTaken: async (username: string): Promise<boolean> => {
+          try {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('username')
+              .eq('username', username)
+              .single();
+
+            if (error && error.code === 'PGRST116') {
+              return false;
+            }
+            return !!data;
+          } catch (error) {
+            console.error('Username check error:', error);
+            return false;
+          }
+        },
+        updateProfile: async (profile: Partial<User>) => {
+          if (!user) throw new Error('No authenticated user');
+          try {
+            const { error } = await supabase
+              .from('profiles')
+              .update({
+                ...profile,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', user.id);
+
+            if (error) throw error;
+            setUser(prev => prev ? { ...prev, ...profile } : null);
+          } catch (error: any) {
+            console.error('Profile update error:', error);
+            throw new Error(error.message);
+          }
+        },
       }}
     >
       {children}
     </AuthContext.Provider>
   );
 };
+
+export default AuthProvider;

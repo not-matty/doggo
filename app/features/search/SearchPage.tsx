@@ -12,80 +12,148 @@ import {
   Text,
   Keyboard,
   SafeAreaView,
-  Image,
+  ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { SearchStackParamList, User } from '@navigation/types';
 import SearchBar from '@components/common/SearchBar';
 import EmptyState from '@components/common/EmptyState';
+import PhotoCarousel from '@components/common/PhotoCarousel';
 import { supabase } from '@services/supabase';
 import debounce from 'lodash.debounce';
 import { AuthContext } from '@context/AuthContext';
+import PhotoViewer from '@components/common/PhotoViewer';
+import { BlurView } from 'expo-blur';
 
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
 const { width } = Dimensions.get('window');
 const SEARCH_BAR_HEIGHT = 70;
 
+interface Post {
+  id: string;
+  url: string;
+  user_id: string;
+  created_at: string;
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    profile_picture_url?: string;
+  };
+}
+
 const SearchPage: React.FC = () => {
   const navigation = useNavigation<SearchPageNavigationProp>();
   const { user } = useContext(AuthContext);
   const [query, setQuery] = useState('');
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
-  
+  const [explorePosts, setExplorePosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
+
   const translateY = useRef(new Animated.Value(0)).current;
   const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    fetchExplorePosts();
+  }, []);
+
+  const fetchExplorePosts = async () => {
+    try {
+      if (!user?.id) return;
+
+      // Step 1: Get immediate contacts
+      const { data: immediateContacts, error: contactsError } = await supabase
+        .from('contacts')
+        .select('contact_user_id')
+        .eq('user_id', user.id);
+
+      if (contactsError) throw contactsError;
+
+      const immediateContactIds = immediateContacts.map(contact => contact.contact_user_id);
+
+      // Step 2: Get contacts of contacts
+      const { data: contactsOfContacts, error: cocError } = await supabase
+        .from('contacts')
+        .select('contact_user_id')
+        .in('user_id', immediateContactIds)
+        .neq('contact_user_id', user.id)
+        .not('contact_user_id', 'in', `(${immediateContactIds.join(',')})`);
+
+      if (cocError) throw cocError;
+
+      const contactsOfContactIds = [...new Set(contactsOfContacts.map(c => c.contact_user_id))];
+
+      // Step 3: Get photos from contacts of contacts
+      const { data: photos, error: photosError } = await supabase
+        .from('photos')
+        .select(`
+          id,
+          url,
+          caption,
+          created_at,
+          user_id,
+          user:profiles (
+            id,
+            name,
+            username,
+            profile_picture_url
+          )
+        `)
+        .in('user_id', contactsOfContactIds)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (photosError) throw photosError;
+
+      setExplorePosts(photos as unknown as Post[]);
+    } catch (error: any) {
+      console.error('Error fetching explore posts:', error);
+      Alert.alert('Error', 'Failed to fetch explore posts');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchExplorePosts();
+  };
+
+  const handleDeletePost = (postId: string) => {
+    setExplorePosts(currentPosts => currentPosts.filter(post => post.id !== postId));
+  };
 
   // Debounced search function
   const performSearch = useCallback(
     debounce(async (searchQuery: string) => {
       if (searchQuery.trim() === '') {
-        // If query is empty, reset to empty
         setFilteredUsers([]);
         return;
       }
 
       try {
-        // Step 1: Get contacts of the current user
-        const { data: contactsData, error: contactsError } = await supabase
-          .from('contacts')
-          .select('contact_user_id')
-          .eq('user_id', user?.id);
-
-        if (contactsError) {
-          console.error('Error fetching contacts:', contactsError);
-          Alert.alert('Error', 'Failed to fetch your contacts.');
-          return;
-        }
-
-        const contactUserIds = contactsData?.map(contact => contact.contact_user_id) || [];
-
-        if (contactUserIds.length === 0) {
-          setFilteredUsers([]);
-          return;
-        }
-
-        // Step 2: Search within contacts
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .ilike('name', `%${searchQuery}%`)
-          .in('id', contactUserIds);
+          .limit(20);
 
-        if (error) {
-          console.error('Error searching profiles:', error);
-          Alert.alert('Error', 'Failed to search contacts.');
-        } else {
-          setFilteredUsers(data as User[]);
-        }
+        if (error) throw error;
+        setFilteredUsers(data as User[]);
       } catch (err) {
         console.error('Search error:', err);
         Alert.alert('Error', 'An unexpected error occurred during search.');
       }
     }, 300),
-    [user]
+    []
   );
 
   useEffect(() => {
@@ -109,87 +177,160 @@ const SearchPage: React.FC = () => {
     [translateY]
   );
 
-  // Navigate to ProfileDetails passing userId
-  const handlePressProfile = (userId: string) => {
-    navigation.navigate('ProfileDetails', { userId });
-  };
-
-  // Render each user in the search results
-  const renderItem = ({ item }: { item: User }) => (
+  const renderUserItem = ({ item }: { item: User }) => (
     <TouchableOpacity
       style={styles.userItemContainer}
-      onPress={() => handlePressProfile(item.id)}
+      onPress={() => navigation.navigate('ProfileDetails', { userId: item.id })}
     >
-      <Image
-        source={{ uri: item.profile_picture_url || 'https://via.placeholder.com/50' }}
-        style={styles.userAvatar}
-      />
       <Text style={styles.userNameText}>{item.name}</Text>
     </TouchableOpacity>
   );
+
+  const renderExplorePost = ({ item, index }: { item: Post; index: number }) => {
+    const isEven = index % 2 === 0;
+    const imageHeight = width * 0.5 * (1 + (isEven ? 0.2 : -0.2));
+
+    return (
+      <View style={styles.postContainer}>
+        <TouchableOpacity
+          style={styles.userHeader}
+          onPress={() => navigation.navigate('ProfileDetails', { userId: item.user.id })}
+        >
+          <Image
+            source={{ uri: item.user.profile_picture_url || 'https://via.placeholder.com/40' }}
+            style={styles.userAvatar}
+          />
+          <Text style={styles.userName}>{item.user.name}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => {
+            setSelectedPost(item);
+            setPhotoViewerVisible(true);
+          }}
+        >
+          <Image
+            source={{ uri: item.url }}
+            style={[styles.postImage, { height: imageHeight }]}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderContent = () => {
+    if (query) {
+      return (
+        <FlatList
+          data={filteredUsers}
+          keyExtractor={(item) => item.id}
+          renderItem={renderUserItem}
+          ListEmptyComponent={<EmptyState message="No users found" />}
+        />
+      );
+    }
+
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#000" />
+        </View>
+      );
+    }
+
+    return (
+      <FlatList
+        data={explorePosts}
+        keyExtractor={(item) => item.id}
+        renderItem={renderExplorePost}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        ListEmptyComponent={
+          <EmptyState message="No posts to explore" />
+        }
+      />
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.container}>
-          <FlatList
-            data={filteredUsers}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
-            onScroll={onScroll}
-            scrollEventThrottle={16}
-            contentContainerStyle={{
-              paddingTop: SEARCH_BAR_HEIGHT + 20,
-              paddingBottom: 60,
-            }}
-            ListEmptyComponent={<EmptyState />}
-          />
-          {/* Animated SearchBar */}
           <SearchBar query={query} setQuery={setQuery} translateY={translateY} />
-
-          {/* Optional Footer / Tabs area */}
-          <View style={styles.footer}>
-            {/* e.g., <Footer /> or keep it blank if you rely on bottom tabs */}
+          <View style={[styles.contentContainer, { marginTop: 0 }]}>
+            {renderContent()}
           </View>
+
+          <PhotoViewer
+            visible={photoViewerVisible}
+            photo={selectedPost}
+            onClose={() => {
+              setPhotoViewerVisible(false);
+              setSelectedPost(null);
+            }}
+            onDelete={handleDeletePost}
+            isOwner={selectedPost?.user_id === user?.id}
+          />
         </View>
       </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 };
 
-export default SearchPage;
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#000', // Dark background
+    backgroundColor: '#fff',
   },
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#fff',
+  },
+  contentContainer: {
+    flex: 1,
+    marginTop: SEARCH_BAR_HEIGHT,
   },
   userItemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#eee',
+  },
+  userNameText: {
+    fontSize: 16,
+    color: '#000',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  postContainer: {
+    marginBottom: 20,
+  },
+  userHeader: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
   },
   userAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 15,
+    marginRight: 12,
   },
-  userNameText: {
-    color: '#fff',
-    fontSize: 18,
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    width,
-    height: 60, // matches your design
+  postImage: {
+    width: width,
+    height: width,
   },
 });
+
+export default SearchPage;

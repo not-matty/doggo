@@ -16,7 +16,6 @@ import { AuthContext } from '@context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
-import HomeScreen from '@features/home/screens/HomeScreen';
 
 type CompleteProfileScreenNavigationProp = StackNavigationProp<
   AuthStackParamList,
@@ -24,7 +23,7 @@ type CompleteProfileScreenNavigationProp = StackNavigationProp<
 >;
 
 const CompleteProfileScreen: React.FC = () => {
-  const { user, updateProfile } = useContext(AuthContext); // Ensure updateProfile is defined
+  const { user, updateProfile } = useContext(AuthContext);
   const navigation = useNavigation<CompleteProfileScreenNavigationProp>();
 
   const [bio, setBio] = useState('');
@@ -37,8 +36,6 @@ const CompleteProfileScreen: React.FC = () => {
       return;
     }
 
-    // Optional: Add more validations (e.g., URL format for profilePictureUrl)
-
     setLoading(true);
 
     try {
@@ -48,7 +45,15 @@ const CompleteProfileScreen: React.FC = () => {
         profile_picture_url: profilePictureUrl || null,
       });
       Alert.alert('Success', 'Your profile has been updated.');
-      navigation.navigate('Home'); // Navigate to the main app screen
+      
+      // Navigate to the main app screen (MainNavigator) via the parent navigator.
+      const parent = navigation.getParent();
+      if (parent) {
+        parent.navigate('MainNavigator');
+      } else {
+        // Fallback if getParent() returns null.
+        navigation.navigate('MainNavigator' as any);
+      }
     } catch (error: any) {
       console.error('Complete Profile Error:', error);
       Alert.alert(

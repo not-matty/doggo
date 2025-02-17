@@ -21,9 +21,9 @@ const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ photos }) => {
       showsHorizontalScrollIndicator={false}
       renderItem={({ item }) => (
         <Image
-          source={{ uri: item.uri }}
+          source={{ uri: item.url }}
           style={styles.image}
-          accessibilityLabel={`Photo of ${item.userId}`} // Adjust as needed
+          accessibilityLabel={`Photo by user ${item.user_id}`}
         />
       )}
       // Prevent vertical scrolling inside the horizontal FlatList

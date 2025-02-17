@@ -1,52 +1,52 @@
 // app/components/common/CustomHeader.tsx
 
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Feather from 'react-native-vector-icons/Feather';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+} from 'react-native';
+import { colors, typography, shadows } from '@styles/theme';
 
-type CustomHeaderProps = {
-  // You can extend props in the future if needed
-};
+interface CustomHeaderProps {
+  translateY?: Animated.Value;
+  opacity?: Animated.Value;
+}
 
-const CustomHeader: React.FC<CustomHeaderProps> = () => {
+const CustomHeader: React.FC<CustomHeaderProps> = ({ translateY = new Animated.Value(0), opacity = new Animated.Value(1) }) => {
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        {/* Optional Icon */}
-        <Feather name="camera" size={24} color="#ccc" style={styles.icon} />
-        {/* "doggo" Text */}
-        <Text style={styles.title}>doggo</Text>
-      </View>
-    </SafeAreaView>
+    <Animated.View
+      style={[
+        styles.header,
+        {
+          transform: [{ translateY }],
+          opacity
+        }
+      ]}
+    >
+      <Text style={styles.title}>doggo</Text>
+    </Animated.View>
   );
 };
 
-const HEADER_HEIGHT = 100; // Adjust as needed
-
 const styles = StyleSheet.create({
-  safeArea: {
+  header: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: HEADER_HEIGHT,
-    backgroundColor: 'transparent', // Transparent to overlay content
-    zIndex: 1000, // Ensure header is on top
+    height: 44,
+    backgroundColor: colors.background,
     justifyContent: 'center',
-    paddingHorizontal: 20, // Adjust padding as needed
-  },
-  header: {
-    flexDirection: 'row',
     alignItems: 'center',
-  },
-  icon: {
-    marginRight: 10, // Space between icon and text
+    zIndex: 100,
+    ...shadows.sm,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ccc', // Adjust text color as needed
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });
 

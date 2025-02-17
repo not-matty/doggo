@@ -12,236 +12,202 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  SafeAreaView,
 } from 'react-native';
 import { AuthContext } from '@context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
-import CustomHeader from '@components/common/CustomHeader'; // Ensure this is correctly imported
-import Footer from '@components/common/Footer'; // Optional: Import Footer if used
-import CountryPicker, { Country, CountryCode } from 'react-native-country-picker-modal';
+import { colors, spacing, typography, layout } from '@styles/theme';
+import Feather from 'react-native-vector-icons/Feather';
 
 type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 
 const LoginScreen: React.FC = () => {
-  const { signInWithPassword } = useContext(AuthContext);
+  const { signInWithPhone } = useContext(AuthContext);
   const navigation = useNavigation<LoginScreenNavigationProp>();
-
-  // Initialize with default country (e.g., United States)
-  const [countryCode, setCountryCode] = useState<CountryCode>('US');
-  const [country, setCountry] = useState<Country | null>(null);
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [withCountryNameButton, setWithCountryNameButton] = useState(false); // Optional: Show country name
+  const [countryCode, setCountryCode] = useState('1');
 
-  const onSelect = (selectedCountry: Country) => {
-    setCountryCode(selectedCountry.cca2);
-    setCountry(selectedCountry);
+  const formatPhoneNumber = (text: string) => {
+    // Remove all non-numeric characters
+    const cleaned = text.replace(/\D/g, '');
+    let formatted = cleaned;
+
+    // Format as (XXX) XXX-XXXX
+    if (cleaned.length > 0) {
+      if (cleaned.length <= 3) {
+        formatted = `(${cleaned}`;
+      } else if (cleaned.length <= 6) {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+      } else {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6, 10)}`;
+      }
+    }
+
+    return formatted;
+  };
+
+  const handlePhoneChange = (text: string) => {
+    setPhone(formatPhoneNumber(text));
+  };
+
+  const handleCountryCodeChange = (text: string) => {
+    // Remove non-numeric characters and limit to 4 digits
+    const cleaned = text.replace(/\D/g, '');
+    setCountryCode(cleaned.slice(0, 4));
   };
 
   const handleSignIn = async () => {
-    const trimmedPhone = phone.trim();
-    const trimmedPassword = password.trim();
-    const fullPhoneNumber = `+${country?.callingCode[0] || '1'}${trimmedPhone}`;
-
-    // Basic validation
-    if (trimmedPhone.length === 0) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
+    const cleanedPhone = phone.replace(/\D/g, '');
+    if (cleanedPhone.length < 10) {
+      Alert.alert('Invalid Phone Number', 'Please enter a complete phone number.');
       return;
     }
 
-    if (!trimmedPassword) {
-      Alert.alert('Missing Information', 'Please enter your password.');
+    if (!countryCode) {
+      Alert.alert('Invalid Country Code', 'Please enter a country code.');
       return;
     }
+
+    const fullPhoneNumber = `+${countryCode}${cleanedPhone}`;
 
     try {
-      await signInWithPassword(fullPhoneNumber, trimmedPassword);
-      // The AuthContext's listener will navigate to MainNavigator upon successful sign-in
+      await signInWithPhone(fullPhoneNumber);
+      navigation.navigate('VerifyOTP', { phone: fullPhoneNumber });
     } catch (error: any) {
-      console.error(error);
-      let message = 'An error occurred during sign in. Please try again.';
-
-      if (error?.status === 400) {
-        message = 'Invalid phone number or password.';
-      } else if (error?.status === 404) {
-        message = 'User not found.';
-      }
-
-      Alert.alert('Sign In Error', message);
+      console.error('Sign in error:', error);
+      Alert.alert('Sign In Error', 'Failed to send verification code. Please try again.');
     }
-  };
-
-  const handleCreateProfile = () => {
-    navigation.navigate('Register');
   };
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.container}>
-        {/* Overlay Header */}
-        <CustomHeader />
-
+      <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
           style={styles.keyboardAvoidingView}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <View style={styles.formContainer}>
-            <Text style={styles.title}>Welcome Back</Text>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Feather name="chevron-left" size={28} color={colors.primary} />
+          </TouchableOpacity>
 
-            {/* Phone Number Input */}
+          <View style={styles.content}>
+            <View style={styles.headerContainer}>
+              <Text style={styles.title}>Welcome Back</Text>
+              <Text style={styles.subtitle}>Enter your phone number to continue</Text>
+            </View>
+
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Phone Number</Text>
               <View style={styles.phoneInputContainer}>
-                <CountryPicker
-                  {...{
-                    countryCode,
-                    withFilter: true,
-                    withFlag: true,
-                    withCallingCode: true,
-                    withEmoji: true,
-                    onSelect: onSelect,
-                    withCountryNameButton,
-                  }}
-                  containerButtonStyle={styles.countryPicker}
-                />
-                <Text style={styles.callingCode}>
-                  +{country?.callingCode[0] || '1'}
-                </Text>
+                <Text style={styles.plus}>+</Text>
                 <TextInput
-                  placeholder="Enter your phone number"
+                  value={countryCode}
+                  onChangeText={handleCountryCodeChange}
+                  keyboardType="phone-pad"
+                  style={styles.countryCode}
+                  maxLength={4}
+                  selectTextOnFocus
+                />
+                <TextInput
+                  placeholder="(123) 456-7890"
                   value={phone}
-                  onChangeText={setPhone}
+                  onChangeText={handlePhoneChange}
                   keyboardType="phone-pad"
                   style={styles.phoneInput}
-                  placeholderTextColor="#888"
-                  maxLength={15} // Adjust based on your requirements
+                  placeholderTextColor={colors.textSecondary}
+                  maxLength={14} // (XXX) XXX-XXXX
                 />
               </View>
             </View>
 
-            {/* Password Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                placeholder="Enter your password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                style={styles.input}
-                placeholderTextColor="#888"
-              />
-            </View>
-
-            {/* Login Button */}
-            <TouchableOpacity style={styles.loginButton} onPress={handleSignIn} accessibilityLabel="Login">
-              <Text style={styles.loginButtonText}>LOGIN</Text>
-            </TouchableOpacity>
-
-            {/* Signup Button */}
-            <TouchableOpacity style={styles.signupButton} onPress={handleCreateProfile} accessibilityLabel="Sign Up">
-              <Text style={styles.signupButtonText}>SIGN UP</Text>
+            <TouchableOpacity
+              style={styles.loginButton}
+              onPress={handleSignIn}
+            >
+              <Text style={styles.loginButtonText}>Continue</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
-
-        {/* Optional Footer */}
-        {/* <Footer /> */}
-      </View>
+      </SafeAreaView>
     </TouchableWithoutFeedback>
   );
 };
 
-export default LoginScreen;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    // No additional padding to allow centering
+    backgroundColor: colors.background,
   },
   keyboardAvoidingView: {
     flex: 1,
-    justifyContent: 'center', // Centers vertically
-    paddingHorizontal: 30,
-    paddingBottom: 40, // Optional: Adjust based on desired spacing from the bottom
   },
-  formContainer: {
-    // Additional styling can be added here if needed
+  backButton: {
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+  },
+  headerContainer: {
+    marginBottom: spacing.xl * 2,
   },
   title: {
-    fontSize: 28,
-    color: '#000',
+    fontSize: 32,
     fontWeight: '700',
-    alignSelf: 'center',
-    marginBottom: 30,
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  subtitle: {
+    fontSize: typography.body.fontSize,
+    color: colors.textSecondary,
   },
   inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    color: '#000',
-    marginBottom: 8,
-    fontWeight: '600',
+    marginBottom: spacing.xl,
   },
   phoneInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    paddingBottom: spacing.sm,
   },
-  countryPicker: {
-    marginRight: 10,
-  },
-  callingCode: {
+  plus: {
     fontSize: 16,
-    color: '#000',
-    marginRight: 10,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  countryCode: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '500',
+    width: 45,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
   },
   phoneInput: {
     flex: 1,
-    height: 50,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    borderRadius: 25,
-    paddingHorizontal: 20,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
-  },
-  input: {
-    height: 50,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    borderRadius: 25,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
+    color: colors.primary,
+    paddingVertical: spacing.sm,
   },
   loginButton: {
-    backgroundColor: '#000',
-    paddingVertical: 15,
-    borderRadius: 25,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.lg,
+    borderRadius: layout.borderRadius.lg,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: spacing.xl,
   },
   loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  signupButton: {
-    backgroundColor: '#fff',
-    paddingVertical: 15,
-    borderRadius: 25,
-    alignItems: 'center',
-    marginTop: 15,
-    borderWidth: 1,
-    borderColor: '#000',
-  },
-  signupButtonText: {
-    color: '#000',
-    fontSize: 18,
+    color: colors.background,
+    fontSize: typography.title.fontSize,
     fontWeight: '600',
   },
 });
+
+export default LoginScreen;

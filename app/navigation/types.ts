@@ -31,19 +31,22 @@ export type MainStackParamList = {
  * Authentication flow stack. 
  */
 export type AuthStackParamList = {
+  Welcome: undefined;
   Login: undefined;
   Register: undefined;
   VerifyOTP: { phone: string };
-  CompleteProfile: undefined; // Added CompleteProfile
+  CompleteProfile: undefined;
   // Add other Auth stack screens here (e.g., ForgotPassword)
 };
 
 /** 
- * Bottom tab navigator: Home, Search, Profile. 
+ * Bottom tab navigator: Home, Search, Upload, Likes, Profile. 
  */
 export type TabsParamList = {
   Home: undefined;
   Search: undefined;
+  Upload: undefined;
+  Likes: undefined;
   Profile: undefined;
 };
 
@@ -96,6 +99,7 @@ export type User = {
   likes: number;
   created_at: string;
   updated_at: string;
+  is_placeholder?: boolean;
 };
 
 
@@ -103,7 +107,9 @@ export type User = {
  * Photo type for images your users upload 
  */
 export type Photo = {
-  uri: string;    // Local or remote URI
-  id: string;     // Unique ID in your DB or storage
-  userId: string; // Foreign key referencing user's ID
+  id: string;
+  url: string;
+  user_id: string;
+  created_at: string;
+  caption?: string;
 };

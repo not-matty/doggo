@@ -1,6 +1,6 @@
 // app/features/auth/screens/RegisterScreen.tsx
 
-import React, { useState, useContext, useRef } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,16 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
+  TouchableWithoutFeedback,
+  Keyboard,
+  SafeAreaView,
 } from 'react-native';
 import { AuthContext } from '@context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
+import { colors, spacing, typography, layout } from '@styles/theme';
+import Feather from 'react-native-vector-icons/Feather';
 
 type RegisterScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Register'>;
 
@@ -23,235 +27,241 @@ const RegisterScreen: React.FC = () => {
   const { signUpWithPhone } = useContext(AuthContext);
   const navigation = useNavigation<RegisterScreenNavigationProp>();
 
-  const [phone, setPhone] = useState('+1 ');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('1');
   const [name, setName] = useState('');
-  const [username, setUsername] = useState(''); // Added username state
-  const [loading, setLoading] = useState<boolean>(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
-  const phoneInputRef = useRef<TextInput>(null);
+  const formatPhoneNumber = (text: string) => {
+    // Remove all non-numeric characters
+    const cleaned = text.replace(/\D/g, '');
+    let formatted = cleaned;
 
-  /**
-   * Ensures that the phone number always starts with "+1 ".
-   * Prevents users from deleting or altering the country code.
-   */
-  const handlePhoneChange = (text: string) => {
-    if (!text.startsWith('+1 ')) {
-      // If the user tries to remove or change the country code, reset it to "+1 "
-      setPhone('+1 ');
-      return;
+    // Format as (XXX) XXX-XXXX
+    if (cleaned.length > 0) {
+      if (cleaned.length <= 3) {
+        formatted = `(${cleaned}`;
+      } else if (cleaned.length <= 6) {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+      } else {
+        formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6, 10)}`;
+      }
     }
-    setPhone(text);
+
+    return formatted;
+  };
+
+  const handlePhoneChange = (text: string) => {
+    setPhone(formatPhoneNumber(text));
+  };
+
+  const handleCountryCodeChange = (text: string) => {
+    // Remove non-numeric characters and limit to 4 digits
+    const cleaned = text.replace(/\D/g, '');
+    setCountryCode(cleaned.slice(0, 4));
   };
 
   const handleSignUp = async () => {
-    // Basic validation
-    if (!name.trim()) {
-      Alert.alert('Missing Information', 'Please enter your name.');
+    if (!name || !username || !password) {
+      Alert.alert('Missing Information', 'Please fill in all fields.');
       return;
     }
 
-    if (!username.trim()) {
-      Alert.alert('Missing Information', 'Please enter a username.');
+    const cleanedPhone = phone.replace(/\D/g, '');
+    if (cleanedPhone.length < 10) {
+      Alert.alert('Invalid Phone Number', 'Please enter a complete phone number.');
       return;
     }
 
-    if (!phone.trim()) {
-      Alert.alert('Missing Information', 'Please enter your phone number.');
+    if (!countryCode) {
+      Alert.alert('Invalid Country Code', 'Please enter a country code.');
       return;
     }
 
-    if (!password.trim() || !confirmPassword.trim()) {
-      Alert.alert('Missing Information', 'Please enter and confirm your password.');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
-      return;
-    }
-
-    // Optional: Add more robust validation here (e.g., phone number format, password strength)
-
-    setLoading(true);
+    const fullPhoneNumber = `+${countryCode}${cleanedPhone}`;
 
     try {
-      await signUpWithPhone(phone, password, name, username); // Pass username
-      // The AuthContext's listener will navigate to VerifyOTP upon successful sign-up
+      await signUpWithPhone(fullPhoneNumber, password, name, username);
+      navigation.navigate('VerifyOTP', { phone: fullPhoneNumber });
     } catch (error: any) {
-      console.error(error);
-      let message = 'An error occurred during registration. Please try again.';
-
-      if (error?.status === 400) {
-        message = 'Invalid phone number or password.';
-      } else if (error?.status === 409) {
-        message = 'Phone number or username already in use.';
-      }
-
-      Alert.alert('Registration Error', message);
-    } finally {
-      setLoading(false);
+      console.error('Sign up error:', error);
+      Alert.alert('Sign Up Error', error.message || 'Failed to create account');
     }
-  };
-
-  const handleNavigateToLogin = () => {
-    navigation.navigate('Login');
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Text style={styles.title}>Create Account</Text>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Feather name="chevron-left" size={28} color={colors.primary} />
+          </TouchableOpacity>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Name</Text>
-        <TextInput
-          placeholder="Enter your name"
-          value={name}
-          onChangeText={setName}
-          style={styles.input}
-          placeholderTextColor="#888"
-          autoCapitalize="words"
-          accessibilityLabel="Name Input"
-        />
-      </View>
+          <View style={styles.content}>
+            <View style={styles.headerContainer}>
+              <Text style={styles.title}>Create Account</Text>
+              <Text style={styles.subtitle}>Fill in your details to get started</Text>
+            </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Username</Text>
-        <TextInput
-          placeholder="Choose a username"
-          value={username}
-          onChangeText={setUsername}
-          style={styles.input}
-          placeholderTextColor="#888"
-          autoCapitalize="none"
-          accessibilityLabel="Username Input"
-        />
-      </View>
+            <View style={styles.inputContainer}>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  placeholder="Full Name"
+                  value={name}
+                  onChangeText={setName}
+                  style={styles.input}
+                  placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="words"
+                />
+              </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Phone Number</Text>
-        <TextInput
-          ref={phoneInputRef}
-          placeholder="+1 1234567890"
-          value={phone}
-          onChangeText={handlePhoneChange}
-          keyboardType="phone-pad"
-          style={styles.input}
-          placeholderTextColor="#888"
-          maxLength={16} // +1 followed by 14 characters (including space)
-          accessibilityLabel="Phone Number Input"
-        />
-      </View>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  placeholder="Username"
+                  value={username}
+                  onChangeText={setUsername}
+                  style={styles.input}
+                  placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          placeholder="Enter your password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-          placeholderTextColor="#888"
-          accessibilityLabel="Password Input"
-        />
-      </View>
+              <View style={styles.phoneInputContainer}>
+                <Text style={styles.plus}>+</Text>
+                <TextInput
+                  value={countryCode}
+                  onChangeText={handleCountryCodeChange}
+                  keyboardType="phone-pad"
+                  style={styles.countryCode}
+                  maxLength={4}
+                  selectTextOnFocus
+                />
+                <TextInput
+                  placeholder="(123) 456-7890"
+                  value={phone}
+                  onChangeText={handlePhoneChange}
+                  keyboardType="phone-pad"
+                  style={styles.phoneInput}
+                  placeholderTextColor={colors.textSecondary}
+                  maxLength={14}
+                />
+              </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Confirm Password</Text>
-        <TextInput
-          placeholder="Confirm your password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-          style={styles.input}
-          placeholderTextColor="#888"
-          accessibilityLabel="Confirm Password Input"
-        />
-      </View>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  placeholder="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  style={styles.input}
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+            </View>
 
-      <TouchableOpacity
-        style={styles.registerButton}
-        onPress={handleSignUp}
-        disabled={loading}
-        accessibilityLabel="Register Button"
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.registerButtonText}>Register</Text>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.loginButton} onPress={handleNavigateToLogin} accessibilityLabel="Login Button">
-        <Text style={styles.loginButtonText}>Login</Text>
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+            <TouchableOpacity
+              style={styles.signupButton}
+              onPress={handleSignUp}
+            >
+              <Text style={styles.signupButtonText}>Create Account</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 };
-
-export default RegisterScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 30,
-    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  backButton: {
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+  },
+  headerContainer: {
+    marginBottom: spacing.xl * 2,
   },
   title: {
     fontSize: 32,
-    color: '#000',
     fontWeight: '700',
-    alignSelf: 'center',
-    marginBottom: 40,
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  subtitle: {
+    fontSize: typography.body.fontSize,
+    color: colors.textSecondary,
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
-  label: {
-    fontSize: 16,
-    color: '#000',
-    marginBottom: 8,
-    fontWeight: '600',
+  inputWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    marginBottom: spacing.xl,
   },
   input: {
-    height: 50,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    borderRadius: 25,
-    paddingHorizontal: 20,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
+    color: colors.primary,
+    paddingVertical: spacing.sm,
   },
-  registerButton: {
-    backgroundColor: '#000',
-    paddingVertical: 15,
-    borderRadius: 25,
+  phoneInputContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    marginBottom: spacing.xl,
   },
-  registerButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+  plus: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '500',
   },
-  loginButton: {
-    backgroundColor: '#fff',
-    paddingVertical: 15,
-    borderRadius: 25,
+  countryCode: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '500',
+    width: 45,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.primary,
+    paddingVertical: spacing.sm,
+  },
+  signupButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.lg,
+    borderRadius: layout.borderRadius.lg,
     alignItems: 'center',
-    marginTop: 15,
-    borderWidth: 1,
-    borderColor: '#000',
+    marginTop: spacing.xl,
   },
-  loginButtonText: {
-    color: '#000',
-    fontSize: 18,
+  signupButtonText: {
+    color: colors.background,
+    fontSize: typography.title.fontSize,
     fontWeight: '600',
   },
 });
+
+export default RegisterScreen;
+
