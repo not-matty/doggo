@@ -8,9 +8,9 @@ export default {
     slug: "doggo",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./app/assets/images/icon.png",
+    icon: "./assets/icon.png",
     splash: {
-      image: "./app/assets/images/splash.png",
+      image: "./assets/splash.png",
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
@@ -18,18 +18,23 @@ export default {
       "**/*"
     ],
     ios: {
-      supportsTablet: true
+      supportsTablet: true,
+      bundleIdentifier: "com.notmatty.doggo"
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./app/assets/images/adaptive-icon.png",
+        foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FFFFFF"
-      }
+      },
+      package: "com.notmatty.doggo"
     },
     web: {
-      favicon: "./app/assets/images/favicon.png"
+      favicon: "./assets/favicon.png"
     },
     extra: {
+      eas: {
+        projectId: "8afa3833-7644-46b1-be2c-4d7acea8fd55"
+      },
       SUPABASE_URL: process.env.SUPABASE_URL,
       SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY
     }
