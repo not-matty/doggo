@@ -59,6 +59,7 @@
     "react-native-svg": "^15.11.1",
     "react-native-vector-icons": "^10.2.0",
     "react-native-web": "~0.19.13",
+    "twilio": "^5.4.4",
     "uuid": "^11.0.5"
   },
   "devDependencies": {

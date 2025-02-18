@@ -71,7 +71,10 @@ const TabsNavigator: React.FC = () => {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeNavigator} />
+      <Tab.Screen
+        name="Home"
+        component={HomeNavigator}
+      />
       <Tab.Screen name="Search" component={SearchNavigator} />
       <Tab.Screen name="Upload" component={UploadTab} />
       <Tab.Screen name="Likes" component={LikesScreen} />

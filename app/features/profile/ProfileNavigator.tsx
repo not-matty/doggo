@@ -6,6 +6,7 @@ import ProfilePage from './screens/ProfilePage';
 import ProfileDetailsPage from './screens/ProfileDetailsScreen';
 import { ProfileStackParamList } from '@navigation/types';
 import { AuthContext } from '@context/AuthContext';
+import { colors } from '@styles/theme';
 
 const ProfileStack = createStackNavigator<ProfileStackParamList>();
 
@@ -23,7 +24,13 @@ const ProfileNavigator: React.FC = () => {
       <ProfileStack.Screen
         name="ProfileDetails"
         component={ProfileDetailsPage}
-        options={{ headerShown: false }}
+        options={{
+          headerShown: true,
+          headerTitle: '',
+          headerTransparent: true,
+          headerBackTitleVisible: false,
+          headerTintColor: colors.primary
+        }}
       />
       {/* Add other Profile stack screens here if needed */}
     </ProfileStack.Navigator>

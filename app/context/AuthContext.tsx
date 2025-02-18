@@ -147,12 +147,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // --------------------------
   // Function: Import Contacts If First Login
   // --------------------------
-  // Checks if contacts are already imported; if not, requests permission and imports them.
   const importContactsIfFirstLogin = async (currentUser: User) => {
     try {
       // Check if contacts have already been imported for this user
       const { data: existingContacts, error: fetchError } = await supabase
-        .from('contacts')
+        .from('unregistered_contacts')
         .select('*')
         .eq('user_id', currentUser.id);
 
@@ -186,20 +185,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
           for (const phone of contact.phoneNumbers) {
             if (phone.number) {
-              const contactInfo = {
-                name: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
-                phoneNumber: phone.number,
-                givenName: contact.firstName,
-                familyName: contact.lastName,
-              };
+              const normalizedPhone = normalizePhoneNumber(phone.number);
 
-              // Create or get profile ID for this contact
-              const profileId = await createPlaceholderProfile(contactInfo);
+              // Check if this contact is already registered
+              const { data: existingUser } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('phone', normalizedPhone)
+                .single();
 
-              if (profileId && profileId !== currentUser.id) {
+              if (!existingUser) {
+                // Store unregistered contact
                 contactsToProcess.push({
                   user_id: currentUser.id,
-                  contact_user_id: profileId,
+                  name: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
+                  phone: normalizedPhone,
                   created_at: new Date().toISOString(),
                 });
               }
@@ -209,18 +209,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (contactsToProcess.length === 0) {
-        console.log('No valid contacts to import');
+        console.log('No unregistered contacts to import');
         return;
       }
 
-      // Insert all contacts
+      // Insert all unregistered contacts
       const { error: insertError } = await supabase
-        .from('contacts')
+        .from('unregistered_contacts')
         .insert(contactsToProcess);
 
       if (insertError) throw insertError;
 
-      console.log(`Imported ${contactsToProcess.length} contacts for user:`, currentUser.id);
+      console.log(`Imported ${contactsToProcess.length} unregistered contacts for user:`, currentUser.id);
     } catch (error) {
       console.error('Error importing contacts:', error);
     }

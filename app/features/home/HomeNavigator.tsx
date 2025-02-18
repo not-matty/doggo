@@ -3,23 +3,34 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from './screens/HomeScreen';
-import ProfileDetailsScreen from '@features/profile/screens/ProfileDetailsScreen'; // Create this screen as needed
+import ProfileDetailsScreen from '../profile/screens/ProfilePage';
 import { HomeStackParamList } from '@navigation/types';
 
-const HomeStack = createStackNavigator<HomeStackParamList>();
+const Stack = createStackNavigator<HomeStackParamList>();
 
 const HomeNavigator: React.FC = () => {
   return (
-    <HomeStack.Navigator
-      initialRouteName="HomePage"
+    <Stack.Navigator
       screenOptions={{
         headerShown: false,
       }}
     >
-      <HomeStack.Screen name="HomePage" component={HomeScreen} />
-      <HomeStack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
+      <Stack.Screen
+        name="HomePage"
+        component={HomeScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="ProfileDetails"
+        component={ProfileDetailsScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
       {/* Add other Home stack screens here */}
-    </HomeStack.Navigator>
+    </Stack.Navigator>
   );
 };
 

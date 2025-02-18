@@ -1,30 +1,33 @@
 // PhotoCarousel.tsx
 
 import React from 'react';
-import { FlatList, Image, Dimensions, StyleSheet } from 'react-native';
-import { Photo } from '@navigation/types';
+import { FlatList, Image, Dimensions, StyleSheet, View } from 'react-native';
+import { Post } from '@navigation/types';
 
 type PhotoCarouselProps = {
-  photos: Photo[]; // Using the Photo type for better type safety
+  photos: Post[]; // Using the Post type for better type safety
 };
 
-const { width, height } = Dimensions.get('window');
-const SEARCH_BAR_HEIGHT = 70; // Ensure this matches your app's layout or pass as prop
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const PHOTO_CONTAINER_HEIGHT = SCREEN_HEIGHT - 120; // Account for header and some padding
 
 const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ photos }) => {
   return (
     <FlatList
       data={photos}
-      keyExtractor={(item) => item.id} // Assuming each photo has a unique 'id'
+      keyExtractor={(item) => item.id} // Assuming each post has a unique 'id'
       horizontal
       pagingEnabled
       showsHorizontalScrollIndicator={false}
       renderItem={({ item }) => (
-        <Image
-          source={{ uri: item.url }}
-          style={styles.image}
-          accessibilityLabel={`Photo by user ${item.user_id}`}
-        />
+        <View style={styles.photoContainer}>
+          <Image
+            source={{ uri: item.url }}
+            style={styles.image}
+            resizeMode="contain"
+            accessibilityLabel={`Photo by user ${item.user_id}`}
+          />
+        </View>
       )}
       // Prevent vertical scrolling inside the horizontal FlatList
       nestedScrollEnabled={true}
@@ -33,10 +36,15 @@ const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ photos }) => {
 };
 
 const styles = StyleSheet.create({
+  photoContainer: {
+    width: SCREEN_WIDTH,
+    height: PHOTO_CONTAINER_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   image: {
-    width: width,
-    height: height - SEARCH_BAR_HEIGHT - 60, // Adjusted for search bar and footer
-    resizeMode: 'cover',
+    width: SCREEN_WIDTH,
+    height: PHOTO_CONTAINER_HEIGHT,
   },
 });
 

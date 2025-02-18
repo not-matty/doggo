@@ -1,216 +1,541 @@
 // app/features/profile/screens/ProfileDetailsScreen.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   View,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
   Text,
+  StyleSheet,
   Image,
   Dimensions,
   FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
   Alert,
-  SafeAreaView,
+  ListRenderItem,
+  Animated,
+  Platform,
+  StatusBar,
 } from 'react-native';
-import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
+import { RouteProp, useRoute } from '@react-navigation/native';
+import { ProfileStackParamList, User, Post } from '@navigation/types';
 import { supabase } from '@services/supabase';
-import { SearchStackParamList, User, Photo } from '@navigation/types';
-import Feather from 'react-native-vector-icons/Feather';
+import { AuthContext } from '@context/AuthContext';
+import { colors, spacing, typography, layout } from '@styles/theme';
+import PhotoViewer from '@components/common/PhotoViewer';
+import { Feather } from '@expo/vector-icons';
+import api from '@services/api';
 
-type ProfileDetailsRouteProp = RouteProp<SearchStackParamList, 'ProfileDetails'>;
+type ProfileDetailsRouteProp = RouteProp<ProfileStackParamList, 'ProfileDetails'>;
 
 const { width } = Dimensions.get('window');
-const IMAGE_SIZE = (width / 2) - 20;
+const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+const HEADER_HEIGHT = 60;
+const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
+const PROFILE_IMAGE_SIZE = 80;
+const GALLERY_SPACING = 24;
+const GALLERY_COLUMN_WIDTH = (width - GALLERY_SPACING * 3) / 2;
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Post>);
 
 const ProfileDetailsScreen: React.FC = () => {
   const route = useRoute<ProfileDetailsRouteProp>();
-  const navigation = useNavigation();
-  const { userId } = route.params;
+  const { user: authUser } = useContext(AuthContext);
+  const [user, setUser] = useState<User | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
+  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollY = new Animated.Value(0);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [profile, setProfile] = useState<User | null>(null);
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [liking, setLiking] = useState<boolean>(false);
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, -TOTAL_HEADER_HEIGHT],
+    extrapolate: 'clamp'
+  });
+
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, 0.5, 1],
+    extrapolate: 'clamp'
+  });
+
+  const profileScale = scrollY.interpolate({
+    inputRange: [-100, 0, TOTAL_HEADER_HEIGHT],
+    outputRange: [1.2, 1, 0.8],
+    extrapolate: 'clamp'
+  });
 
   useEffect(() => {
-    fetchUserProfileAndPhotos();
-  }, []);
+    fetchUserAndPosts();
+  }, [route.params?.userId]);
 
-  const fetchUserProfileAndPhotos = async () => {
-    setLoading(true);
+  useEffect(() => {
+    // Pre-calculate image heights
+    posts.forEach(post => {
+      if (!imageHeights[post.id]) {
+        Image.getSize(post.url, (width, height) => {
+          const aspectRatio = width / height;
+          const calculatedHeight = GALLERY_COLUMN_WIDTH / aspectRatio;
+          setImageHeights(prev => ({
+            ...prev,
+            [post.id]: calculatedHeight
+          }));
+        }, (error) => {
+          console.error('Error loading image dimensions:', error);
+          // Fallback to square if error
+          setImageHeights(prev => ({
+            ...prev,
+            [post.id]: GALLERY_COLUMN_WIDTH
+          }));
+        });
+      }
+    });
+  }, [posts]);
+
+  const fetchUserAndPosts = async () => {
     try {
-      // 1) Fetch profile data
-      let { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      setIsLoading(true);
+      const userResponse = await api.get(`/users/${route.params.userId}`);
+      const postsResponse = await api.get(`/users/${route.params.userId}/posts`);
 
-      if (profileError) throw profileError;
+      setUser(userResponse.data);
+      setPosts(postsResponse.data);
 
-      // 2) Fetch user photos
-      let { data: photosData, error: photosError } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+      // Prefetch all images including profile picture
+      const allImages = [...postsResponse.data];
+      if (userResponse.data.profilePicture) {
+        await Image.prefetch(userResponse.data.profilePicture);
+      }
+      await prefetchImages(allImages);
 
-      if (photosError) throw photosError;
-
-      setProfile(profileData as User);
-      setPhotos(photosData as Photo[]);
-    } catch (err: any) {
-      console.error('Error fetching profile or photos:', err);
-      Alert.alert('Error', 'Failed to load profile details.');
-    } finally {
-      setLoading(false);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      setIsLoading(false);
     }
   };
 
-  const handleLike = async () => {
-    if (!profile) return;
-    setLiking(true);
+  const handleLikeUser = async () => {
+    if (!user || !authUser) return;
 
     try {
-      // Increment likes in "profiles" table
-      const newLikesCount = profile.likes + 1;
+      // Check if already liked
+      const { data: existingLike, error: checkError } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('liker_id', authUser.id)
+        .eq('liked_id', user.id)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') throw checkError;
+
+      if (existingLike) {
+        Alert.alert('Already Liked', 'You have already liked this user.');
+        return;
+      }
+
+      // Add the like
+      const { error: likeError } = await supabase
+        .from('likes')
+        .insert([{
+          liker_id: authUser.id,
+          liked_id: user.id
+        }]);
+
+      if (likeError) throw likeError;
+
+      // Check if it's a mutual like
+      const { data: mutualLike, error: mutualCheckError } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('liker_id', user.id)
+        .eq('liked_id', authUser.id)
+        .single();
+
+      if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
+
+      if (mutualLike) {
+        // Create a match
+        const { error: matchError } = await supabase
+          .from('matches')
+          .insert([{
+            user1_id: authUser.id,
+            user2_id: user.id
+          }]);
+
+        if (matchError) throw matchError;
+
+        // Create match notification
+        await supabase
+          .from('notifications')
+          .insert([
+            {
+              user_id: authUser.id,
+              type: 'match',
+              data: { matched_user_id: user.id }
+            },
+            {
+              user_id: user.id,
+              type: 'match',
+              data: { matched_user_id: authUser.id }
+            }
+          ]);
+
+        Alert.alert('Match!', `You and ${user.name} have liked each other!`);
+      } else {
+        // Create like notification
+        await supabase
+          .from('notifications')
+          .insert([{
+            user_id: user.id,
+            type: 'like',
+            data: { liker_id: authUser.id }
+          }]);
+
+        Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');
+      }
+    } catch (err) {
+      console.error('Error liking user:', err);
+      Alert.alert('Error', 'Failed to like user. Please try again.');
+    }
+  };
+
+  const handleLikeUnregistered = async () => {
+    if (!user) return;
+
+    try {
+      // Store the like in the database
+      const { error: likeError } = await supabase
+        .from('unregistered_likes')
+        .insert([{
+          user_id: authUser?.id,
+          phone: user.phone,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (likeError) throw likeError;
+
+      // Send SMS invite
+      const { data: response, error: smsError } = await supabase.functions.invoke('send-invite', {
+        body: { phone: user.phone, fromUserName: authUser?.name || 'Someone' }
+      });
+
+      if (smsError) {
+        console.error('Error sending invite:', smsError);
+        Alert.alert('Partial Success', 'Like recorded but failed to send invite message.');
+        return;
+      }
+
+      if (response?.success) {
+        Alert.alert('Success', `Liked and invited ${user.name} to join doggo!`);
+      } else {
+        Alert.alert('Partial Success', 'Like recorded but failed to send invite message.');
+      }
+    } catch (err) {
+      console.error('Error liking unregistered user:', err);
+      Alert.alert('Error', 'Failed to send like. Please try again.');
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    try {
       const { error } = await supabase
-        .from('profiles')
-        .update({ likes: newLikesCount })
-        .eq('id', profile.id);
+        .from('photos')
+        .delete()
+        .eq('id', postId);
 
       if (error) throw error;
 
-      // Update local state
-      setProfile({ ...profile, likes: newLikesCount });
-    } catch (error: any) {
-      console.error('Error updating likes:', error);
-      Alert.alert('Error', 'Failed to update likes.');
-    } finally {
-      setLiking(false);
+      setPosts(posts.filter(post => post.id !== postId));
+      setPhotoViewerVisible(false);
+      setSelectedPost(null);
+    } catch (err) {
+      console.error('Error deleting photo:', err);
+      Alert.alert('Error', 'Failed to delete photo');
     }
   };
 
-  const renderItem = ({ item }: { item: Photo }) => (
-    <View style={styles.imageContainer}>
-      <Image source={{ uri: item.uri }} style={styles.image} resizeMode="cover" />
-    </View>
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchUserAndPosts();
+    setRefreshing(false);
+  };
+
+  const prefetchImages = async (imagesToPrefetch: Post[]) => {
+    try {
+      // Create an array of prefetch promises
+      const prefetchPromises = imagesToPrefetch.map(post => {
+        // Prefetch the image
+        const imagePrefetch = Image.prefetch(post.url);
+
+        // Get image dimensions
+        const dimensionsPromise = new Promise<{ id: string; ratio: number }>((resolve, reject) => {
+          Image.getSize(post.url,
+            (width, height) => {
+              const aspectRatio = width / height;
+              resolve({ id: post.id, ratio: aspectRatio });
+            },
+            (error) => {
+              console.error('Error loading image dimensions:', error);
+              resolve({ id: post.id, ratio: 1 });
+            }
+          );
+        });
+
+        return Promise.all([imagePrefetch, dimensionsPromise]);
+      });
+
+      // Wait for all prefetch operations to complete
+      const results = await Promise.all(prefetchPromises);
+
+      // Update image heights
+      const newHeights: Record<string, number> = {};
+      results.forEach(([_, { id, ratio }]) => {
+        newHeights[id] = ratio;
+      });
+      setImageHeights(newHeights);
+    } catch (error) {
+      console.error('Error prefetching images:', error);
+    }
+  };
+
+  const renderGalleryItem: ListRenderItem<Post> = ({ item }) => (
+    <TouchableOpacity
+      style={styles.galleryItem}
+      onPress={() => {
+        setSelectedPost(item);
+        setPhotoViewerVisible(true);
+      }}
+    >
+      <Image
+        source={{ uri: item.url }}
+        style={[styles.galleryImage, { aspectRatio: imageHeights[item.id] || 1 }]}
+        resizeMode="cover"
+      />
+    </TouchableOpacity>
   );
 
-  if (loading) {
+  if (isLoading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color="#fff" />
-        </View>
-      </SafeAreaView>
+      <View style={styles.container}>
+        <ActivityIndicator size="large" style={styles.loadingIndicator} />
+      </View>
     );
   }
 
-  if (!profile) {
+  if (!user) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <Text style={styles.text}>User not found.</Text>
-      </SafeAreaView>
+      <View style={styles.container}>
+        <Text style={styles.errorText}>User not found</Text>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Top Row: Avatar + Name + Like Button */}
-      <View style={styles.userInfoContainer}>
-        <Image
-          source={{ uri: profile.profile_picture_url || 'https://via.placeholder.com/50' }}
-          style={styles.profileImage}
-        />
-        <View style={styles.nameLikeContainer}>
-          <Text style={styles.userName}>{profile.name}</Text>
-          <TouchableOpacity
-            onPress={handleLike}
-            disabled={liking}
-            style={styles.likeButton}
-            accessibilityLabel="Like User"
-          >
-            <Feather name="heart" size={20} color="#fff" />
-            <Text style={styles.likeCount}>{profile.likes}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+    <View style={styles.container}>
+      <Animated.View
+        style={[
+          styles.fixedHeader,
+          {
+            transform: [{ translateY: headerTranslateY }],
+            opacity: headerOpacity,
+          }
+        ]}
+      >
+        <Text style={styles.headerUsername}>@{user?.username}</Text>
+      </Animated.View>
 
-      {/* Photo Grid */}
-      <FlatList
-        data={photos}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
+      <AnimatedFlatList
+        data={posts}
+        renderItem={renderGalleryItem}
         numColumns={2}
-        contentContainerStyle={{ paddingBottom: 60, paddingHorizontal: 10 }}
+        columnWrapperStyle={styles.columnWrapper}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        ListHeaderComponent={
+          <View style={styles.scrollableHeader}>
+            <Animated.View
+              style={[
+                styles.profileSection,
+                {
+                  transform: [{ scale: profileScale }]
+                }
+              ]}
+            >
+              <View style={styles.profileImageContainer}>
+                <Image
+                  source={{
+                    uri: user?.profile_picture_url || 'https://via.placeholder.com/160'
+                  }}
+                  style={styles.profileImage}
+                />
+              </View>
+
+              <View style={styles.userInfo}>
+                <Text style={styles.name}>{user?.name}</Text>
+              </View>
+
+              {!user?.is_placeholder && user?.id !== authUser?.id && (
+                <TouchableOpacity
+                  style={styles.likeButton}
+                  onPress={handleLikeUser}
+                >
+                  <Feather name="heart" size={20} color={colors.primary} />
+                  <Text style={styles.likeButtonText}>Like</Text>
+                </TouchableOpacity>
+              )}
+            </Animated.View>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No posts yet</Text>
+          </View>
+        }
       />
-    </SafeAreaView>
+
+      <PhotoViewer
+        visible={photoViewerVisible}
+        photo={selectedPost}
+        onClose={() => {
+          setPhotoViewerVisible(false);
+          setSelectedPost(null);
+        }}
+        onDelete={handleDeletePost}
+        isOwner={selectedPost?.user_id === authUser?.id}
+      />
+    </View>
   );
 };
 
 export default ProfileDetailsScreen;
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
-    backgroundColor: '#000', // VSCO-like black background
+    backgroundColor: colors.background,
   },
-  loaderContainer: {
-    flex: 1,
+  fixedHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: TOTAL_HEADER_HEIGHT,
+    backgroundColor: colors.background,
+    zIndex: 1000,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    paddingTop: STATUS_BAR_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  userInfoContainer: {
-    flexDirection: 'row',
-    padding: 10,
+  headerUsername: {
+    fontSize: typography.title.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  scrollableHeader: {
+    paddingTop: TOTAL_HEADER_HEIGHT + spacing.md,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  profileSection: {
     alignItems: 'center',
-    backgroundColor: '#000',
+    marginBottom: spacing.xl,
+  },
+  profileImageContainer: {
+    width: PROFILE_IMAGE_SIZE,
+    height: PROFILE_IMAGE_SIZE,
+    borderRadius: PROFILE_IMAGE_SIZE / 2,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   profileImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 10,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
-  nameLikeContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  userInfo: {
     alignItems: 'center',
   },
-  userName: {
-    color: '#fff',
-    fontSize: 18,
+  name: {
+    fontSize: 24,
+    color: colors.textPrimary,
     fontWeight: '600',
+    marginBottom: spacing.sm,
   },
   likeButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: layout.borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    marginTop: spacing.md,
   },
-  likeCount: {
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 8,
+  likeButtonText: {
+    color: colors.primary,
+    marginLeft: spacing.sm,
+    fontSize: typography.body.fontSize,
+    fontWeight: '500',
   },
-  imageContainer: {
-    backgroundColor: '#1c1c1e',
-    borderRadius: 8,
-    margin: 5,
-    width: IMAGE_SIZE,
-    height: IMAGE_SIZE,
+  contentContainer: {
+    paddingHorizontal: spacing.xl,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    marginBottom: GALLERY_SPACING,
+  },
+  galleryItem: {
+    width: GALLERY_COLUMN_WIDTH,
+    marginBottom: GALLERY_SPACING,
+    backgroundColor: colors.surface,
+    borderRadius: layout.borderRadius.md,
     overflow: 'hidden',
   },
-  image: {
+  galleryImage: {
     width: '100%',
-    height: '100%',
+    backgroundColor: colors.surface,
   },
-  text: {
-    color: '#fff',
-    fontSize: 18,
+  emptyContainer: {
+    paddingTop: spacing.xl * 2,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: typography.body.fontSize,
+  },
+  errorText: {
+    color: colors.textPrimary,
+    fontSize: typography.body.fontSize,
     textAlign: 'center',
-    marginTop: 50,
+    marginTop: spacing.xl,
+  },
+  loadingIndicator: {
+    marginTop: spacing.xl,
   },
 });

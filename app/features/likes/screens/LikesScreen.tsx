@@ -6,66 +6,107 @@ import {
     SafeAreaView,
     ActivityIndicator,
     Alert,
+    Text,
+    Image,
+    TouchableOpacity,
 } from 'react-native';
 import { supabase } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
-import PhotoCarousel from '@components/common/PhotoCarousel';
 import EmptyState from '@components/common/EmptyState';
+import { User } from '@navigation/types';
+import { useNavigation } from '@react-navigation/native';
+import { colors, spacing, typography } from '@styles/theme';
 
-interface LikedPost {
-    id: string;
-    photo_url: string;
-    user_id: string;
-    created_at: string;
-    caption?: string;
+interface Match extends User {
+    matched_at: string;
 }
 
 const LikesScreen: React.FC = () => {
-    const [likedPosts, setLikedPosts] = useState<LikedPost[]>([]);
+    const [matches, setMatches] = useState<Match[]>([]);
     const [loading, setLoading] = useState(true);
     const { user } = useContext(AuthContext);
+    const navigation = useNavigation();
 
     useEffect(() => {
-        fetchLikedPosts();
+        fetchMatches();
     }, []);
 
-    const fetchLikedPosts = async () => {
+    const fetchMatches = async () => {
         try {
             if (!user?.id) return;
 
-            const { data, error } = await supabase
-                .from('likes')
+            // Get matches for the current user
+            const { data: matchesData, error: matchesError } = await supabase
+                .from('matches')
                 .select(`
-          post_id,
-          posts (
-            id,
-            photo_url,
-            user_id,
-            created_at,
-            caption
-          )
-        `)
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false });
+                    id,
+                    matched_at,
+                    user1:user1_id (
+                        id,
+                        name,
+                        username,
+                        profile_picture_url,
+                        created_at,
+                        updated_at
+                    ),
+                    user2:user2_id (
+                        id,
+                        name,
+                        username,
+                        profile_picture_url,
+                        created_at,
+                        updated_at
+                    )
+                `)
+                .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
 
-            if (error) throw error;
+            if (matchesError) throw matchesError;
 
-            const formattedPosts = data
-                .map(item => item.posts)
-                .filter(post => post !== null) as LikedPost[];
+            // Transform the data to match our Match type
+            const transformedMatches = (matchesData || []).map(match => {
+                const matchedUser = match.user1.id === user.id ? match.user2 : match.user1;
+                return {
+                    ...matchedUser,
+                    matched_at: match.matched_at
+                };
+            });
 
-            setLikedPosts(formattedPosts);
+            setMatches(transformedMatches);
         } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to fetch liked posts');
+            console.error('Error fetching matches:', error);
+            Alert.alert('Error', error.message || 'Failed to fetch matches');
         } finally {
             setLoading(false);
         }
     };
 
+    const navigateToProfile = (userId: string) => {
+        navigation.navigate('ProfileDetails' as never, { userId } as never);
+    };
+
+    const renderMatch = ({ item }: { item: Match }) => (
+        <TouchableOpacity
+            style={styles.matchContainer}
+            onPress={() => navigateToProfile(item.id)}
+        >
+            <Image
+                source={{ uri: item.profile_picture_url || 'https://via.placeholder.com/60' }}
+                style={styles.profileImage}
+            />
+            <View style={styles.matchInfo}>
+                <Text style={styles.nameText}>{item.name}</Text>
+                <Text style={styles.usernameText}>@{item.username}</Text>
+                <Text style={styles.matchedText}>
+                    Matched {new Date(item.matched_at).toLocaleDateString()}
+                </Text>
+            </View>
+        </TouchableOpacity>
+    );
+
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#000" />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -73,21 +114,15 @@ const LikesScreen: React.FC = () => {
     return (
         <SafeAreaView style={styles.container}>
             <FlatList
-                data={likedPosts}
+                data={matches}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                    <PhotoCarousel
-                        photos={[{ uri: item.photo_url }]}
-                        caption={item.caption}
-                        userId={item.user_id}
-                    />
-                )}
+                renderItem={renderMatch}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.contentContainer}
                 ListEmptyComponent={
                     <EmptyState
-                        message="No liked posts yet"
-                        subMessage="Posts you like will appear here"
+                        message="No matches yet"
+                        subMessage="When you and someone else like each other, you'll see them here"
                     />
                 }
             />
@@ -98,16 +133,48 @@ const LikesScreen: React.FC = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
     },
     contentContainer: {
-        paddingBottom: 20,
+        padding: spacing.md,
+    },
+    matchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: spacing.md,
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        marginBottom: spacing.md,
+    },
+    profileImage: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        marginRight: spacing.md,
+    },
+    matchInfo: {
+        flex: 1,
+    },
+    nameText: {
+        fontSize: typography.title.fontSize,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    usernameText: {
+        fontSize: typography.body.fontSize,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    matchedText: {
+        fontSize: typography.caption.fontSize,
+        color: colors.textSecondary,
+        marginTop: 4,
     },
 });
 

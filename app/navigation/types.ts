@@ -21,10 +21,10 @@ export type RootStackParamList = {
  * Main stack after user is authenticated. 
  */
 export type MainStackParamList = {
-  Home: undefined;
+  Tabs: undefined;
   AddPhoto: undefined;
+  Home: undefined;
   ProfileDetails: { userId: string };
-  Tabs: undefined; // If you navigate to "Tabs" from this stack
 };
 
 /** 
@@ -56,7 +56,6 @@ export type TabsParamList = {
 export type HomeStackParamList = {
   HomePage: undefined;
   ProfileDetails: { userId: string };
-  // Add other Home stack screens here
 };
 
 /** 
@@ -85,31 +84,29 @@ export type ProfileStackParamList = {
 };
 
 /**
- * Consolidated "User" type (matches Supabase 'profiles' table).
+ * Post type matching the 'posts' table
  */
+export type Post = {
+  id: string;
+  user_id: string;
+  url: string;
+  caption?: string;
+  created_at: string;
+  user?: User;
+};
 
+/**
+ * User type matching the 'profiles' table
+ */
 export type User = {
   id: string;
   name: string;
   username: string;
-  bio?: string;
   profile_picture_url?: string | null;
-  phone: string;
   email?: string;
-  likes: number;
+  phone?: string;
+  likes?: number;
   created_at: string;
   updated_at: string;
   is_placeholder?: boolean;
-};
-
-
-/** 
- * Photo type for images your users upload 
- */
-export type Photo = {
-  id: string;
-  url: string;
-  user_id: string;
-  created_at: string;
-  caption?: string;
 };

@@ -12,6 +12,10 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  ListRenderItem,
+  Animated,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { ProfileStackParamList, User } from '@navigation/types';
@@ -41,10 +45,14 @@ interface Post {
 type ProfilePageRouteProp = RouteProp<ProfileStackParamList, 'ProfilePage'>;
 
 const { width } = Dimensions.get('window');
-const HEADER_HEIGHT = 70;
+const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+const HEADER_HEIGHT = 60;
+const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
 const PROFILE_IMAGE_SIZE = 80;
-const GALLERY_SPACING = 2;
+const GALLERY_SPACING = 24;
 const GALLERY_COLUMN_WIDTH = (width - GALLERY_SPACING * 3) / 2;
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Photo>);
 
 const ProfilePage: React.FC = () => {
   const route = useRoute<ProfilePageRouteProp>();
@@ -59,10 +67,65 @@ const ProfilePage: React.FC = () => {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
+  const [aspectRatios, setAspectRatios] = useState<Record<string, number>>({});
+  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
+  const scrollY = new Animated.Value(0);
 
-  useEffect(() => {
-    fetchUserAndPosts();
-  }, [route.params?.userId, authUser?.id]);
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, -TOTAL_HEADER_HEIGHT],
+    extrapolate: 'clamp'
+  });
+
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, 0.5, 1],
+    extrapolate: 'clamp'
+  });
+
+  const profileScale = scrollY.interpolate({
+    inputRange: [-100, 0, TOTAL_HEADER_HEIGHT],
+    outputRange: [1.2, 1, 0.8],
+    extrapolate: 'clamp'
+  });
+
+  const prefetchImages = async (imagesToPrefetch: Photo[]) => {
+    try {
+      // Create an array of prefetch promises
+      const prefetchPromises = imagesToPrefetch.map(post => {
+        // Prefetch the image
+        const imagePrefetch = Image.prefetch(post.url);
+
+        // Get image dimensions
+        const dimensionsPromise = new Promise<{ id: string; ratio: number }>((resolve, reject) => {
+          Image.getSize(post.url,
+            (width, height) => {
+              const aspectRatio = width / height;
+              resolve({ id: post.id, ratio: aspectRatio });
+            },
+            (error) => {
+              console.error('Error loading image dimensions:', error);
+              resolve({ id: post.id, ratio: 1 });
+            }
+          );
+        });
+
+        return Promise.all([imagePrefetch, dimensionsPromise]);
+      });
+
+      // Wait for all prefetch operations to complete
+      const results = await Promise.all(prefetchPromises);
+
+      // Update aspect ratios
+      const newRatios: Record<string, number> = {};
+      results.forEach(([_, { id, ratio }]) => {
+        newRatios[id] = ratio;
+      });
+      setAspectRatios(newRatios);
+    } catch (error) {
+      console.error('Error prefetching images:', error);
+    }
+  };
 
   const fetchUserAndPosts = async () => {
     try {
@@ -93,6 +156,14 @@ const ProfilePage: React.FC = () => {
 
       setUser(userData as User);
       setPosts(photosData as Photo[]);
+
+      // Prefetch all images in the background
+      prefetchImages(photosData as Photo[]);
+
+      // Also prefetch the profile picture if it exists
+      if (userData.profile_picture_url) {
+        Image.prefetch(userData.profile_picture_url);
+      }
     } catch (err) {
       console.error('Error fetching data:', err);
       Alert.alert('Error', 'Failed to load profile data');
@@ -101,6 +172,10 @@ const ProfilePage: React.FC = () => {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    fetchUserAndPosts();
+  }, [route.params?.userId, authUser?.id]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -118,7 +193,7 @@ const ProfilePage: React.FC = () => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 1,
@@ -289,26 +364,21 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  const renderGalleryItem = ({ item, index }: { item: Photo; index: number }) => {
-    const imageHeight = GALLERY_COLUMN_WIDTH * (1 + (index % 2 === 0 ? 0.2 : -0.2));
-
-    return (
-      <View style={[styles.galleryItem, { height: imageHeight }]}>
-        <TouchableOpacity
-          style={styles.galleryImageContainer}
-          onPress={() => {
-            setSelectedPhoto(item);
-            setPhotoViewerVisible(true);
-          }}
-        >
-          <Image
-            source={{ uri: item.url }}
-            style={styles.galleryImage}
-          />
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  const renderGalleryItem: ListRenderItem<Photo> = ({ item }) => (
+    <TouchableOpacity
+      style={styles.galleryItem}
+      onPress={() => {
+        setSelectedPhoto(item);
+        setPhotoViewerVisible(true);
+      }}
+    >
+      <Image
+        source={{ uri: item.url }}
+        style={[styles.galleryImage, { aspectRatio: aspectRatios[item.id] || 1 }]}
+        resizeMode="cover"
+      />
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
@@ -328,107 +398,82 @@ const ProfilePage: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.profileImageContainer}>
-            <TouchableOpacity
-              onPress={handleProfileImagePress}
-              disabled={uploadingImage || user.id !== authUser?.id}
-              style={styles.profileImageTouchable}
+      <Animated.View
+        style={[
+          styles.fixedHeader,
+          {
+            transform: [{ translateY: headerTranslateY }],
+            opacity: headerOpacity,
+          }
+        ]}
+      >
+        <Text style={styles.headerUsername}>@{user?.username}</Text>
+      </Animated.View>
+
+      <AnimatedFlatList
+        data={posts}
+        renderItem={renderGalleryItem}
+        numColumns={2}
+        columnWrapperStyle={styles.columnWrapper}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        ListHeaderComponent={
+          <View style={styles.scrollableHeader}>
+            <Animated.View
+              style={[
+                styles.profileSection,
+                {
+                  transform: [{ scale: profileScale }]
+                }
+              ]}
             >
-              {uploadingImage ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <>
+              <View style={styles.profileImageContainer}>
+                <TouchableOpacity onPress={handleProfileImagePress}>
                   <Image
                     source={{
-                      uri: user.is_placeholder ?
-                        'https://via.placeholder.com/80?text=Not+On+App' :
-                        (user.profile_picture_url || 'https://via.placeholder.com/80')
+                      uri: user?.profile_picture_url || 'https://via.placeholder.com/160'
                     }}
-                    style={[
-                      styles.profileImage,
-                      user.is_placeholder && styles.placeholderImage
-                    ]}
-                    defaultSource={require('@assets/images/Default_pfp.svg.png')}
+                    style={styles.profileImage}
                   />
-                  {!user.is_placeholder && user.id === authUser?.id && (
-                    <View style={styles.editProfileImageOverlay}>
-                      <Feather name="camera" size={16} color={colors.primary} />
-                    </View>
-                  )}
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.userInfo}>
-            <Text style={styles.name}>{user.name}</Text>
-            {!user.is_placeholder && (
-              <Text style={styles.username}>@{user.username}</Text>
-            )}
-            {user.is_placeholder && (
-              <View style={styles.placeholderBadge}>
-                <Text style={styles.placeholderText}>Not on app yet</Text>
+                </TouchableOpacity>
               </View>
-            )}
-            {!user.is_placeholder && user.id === authUser?.id && (
-              <TouchableOpacity
-                style={styles.editProfileButton}
-                onPress={navigateToEditProfile}
-              >
-                <Text style={styles.editProfileText}>Edit Profile</Text>
-              </TouchableOpacity>
-            )}
+
+              <View style={styles.userInfo}>
+                <Text style={styles.name}>{user?.name}</Text>
+              </View>
+
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={navigateToEditProfile}
+                >
+                  <Text style={styles.actionButtonText}>Edit Profile</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={navigateToSettings}
+                >
+                  <Feather name="settings" size={20} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
           </View>
-
-          {!user.is_placeholder && user.id === authUser?.id && (
-            <TouchableOpacity
-              style={styles.settingsButton}
-              onPress={() => setShowSettings(true)}
-            >
-              <Feather name="settings" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {user.is_placeholder ? (
-        <View style={styles.placeholderContainer}>
-          <Text style={styles.placeholderTitle}>Invite to Join</Text>
-          <Text style={styles.placeholderDescription}>
-            {user.name} isn't on the app yet. When they join using {user.phone},
-            they'll be able to see your likes and photos.
-          </Text>
-          <TouchableOpacity
-            style={styles.inviteButton}
-            onPress={() => {
-              // TODO: Implement share/invite functionality
-              Alert.alert('Coming Soon', 'Invite functionality is under development');
-            }}
-          >
-            <Text style={styles.inviteButtonText}>Send Invite</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={posts}
-          renderItem={renderGalleryItem}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.galleryContainer}
-          columnWrapperStyle={styles.galleryRow}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No posts yet</Text>
-            </View>
-          }
-        />
-      )}
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No posts yet</Text>
+            <Text style={styles.emptySubtext}>Share your first photo!</Text>
+          </View>
+        }
+      />
 
       <PhotoViewer
         visible={photoViewerVisible}
@@ -438,7 +483,7 @@ const ProfilePage: React.FC = () => {
           setSelectedPhoto(null);
         }}
         onDelete={handleDeletePhoto}
-        isOwner={user?.id === authUser?.id}
+        isOwner={true}
       />
 
       <SettingsModal />
@@ -451,120 +496,117 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    height: HEADER_HEIGHT + PROFILE_IMAGE_SIZE + 20,
-    paddingTop: HEADER_HEIGHT - 20,
-    paddingHorizontal: 15,
+  fixedHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: TOTAL_HEADER_HEIGHT,
+    backgroundColor: colors.background,
+    zIndex: 1000,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
-    backgroundColor: colors.background,
-    ...shadows.sm,
-  },
-  headerContent: {
-    flexDirection: 'row',
+    paddingTop: STATUS_BAR_HEIGHT,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 20,
+  },
+  headerUsername: {
+    fontSize: typography.title.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  scrollableHeader: {
+    paddingTop: TOTAL_HEADER_HEIGHT + spacing.md,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  profileSection: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
   profileImageContainer: {
     width: PROFILE_IMAGE_SIZE,
     height: PROFILE_IMAGE_SIZE,
     borderRadius: PROFILE_IMAGE_SIZE / 2,
-    marginRight: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginBottom: spacing.md,
+    overflow: 'hidden',
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    ...shadows.sm,
-  },
-  profileImageTouchable: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   profileImage: {
-    width: PROFILE_IMAGE_SIZE,
-    height: PROFILE_IMAGE_SIZE,
-    borderRadius: PROFILE_IMAGE_SIZE / 2,
-    backgroundColor: colors.surface,
-  },
-  editProfileImageOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: colors.background,
-    borderRadius: 15,
-    padding: 5,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    ...shadows.sm,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
   userInfo: {
-    flex: 1,
-    paddingTop: 5,
+    alignItems: 'center',
   },
   name: {
     fontSize: 24,
     color: colors.textPrimary,
     fontWeight: '600',
+    marginBottom: spacing.sm,
   },
-  username: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginTop: 4,
+  actionButtons: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
   },
-  editProfileButton: {
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
     borderRadius: layout.borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.divider,
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surface,
-    ...shadows.sm,
+    borderColor: colors.primary,
+    marginHorizontal: spacing.sm,
   },
-  editProfileText: {
-    color: colors.textPrimary,
-    fontSize: 14,
+  actionButtonText: {
+    color: colors.primary,
+    fontSize: typography.body.fontSize,
     fontWeight: '500',
   },
-  settingsButton: {
-    padding: 12,
-    marginLeft: 'auto',
-    marginTop: 5,
+  contentContainer: {
+    paddingHorizontal: spacing.xl,
   },
-  galleryContainer: {
-    padding: GALLERY_SPACING,
-  },
-  galleryRow: {
+  columnWrapper: {
     justifyContent: 'space-between',
     marginBottom: GALLERY_SPACING,
   },
   galleryItem: {
     width: GALLERY_COLUMN_WIDTH,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  galleryImageContainer: {
-    flex: 1,
-    borderRadius: 8,
+    marginBottom: GALLERY_SPACING,
+    backgroundColor: colors.surface,
+    borderRadius: layout.borderRadius.md,
     overflow: 'hidden',
   },
   galleryImage: {
     width: '100%',
-    height: '100%',
+    backgroundColor: colors.surface,
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    paddingTop: spacing.xl * 2,
     alignItems: 'center',
-    paddingTop: spacing.xl,
   },
   emptyText: {
     color: colors.textSecondary,
     fontSize: typography.body.fontSize,
+    marginBottom: spacing.sm,
+  },
+  emptySubtext: {
+    color: colors.textSecondary,
+    fontSize: typography.caption.fontSize,
   },
   text: {
     color: colors.textPrimary,

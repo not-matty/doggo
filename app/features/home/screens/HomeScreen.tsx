@@ -1,26 +1,29 @@
 // app/features/home/screens/HomeScreen.tsx
 
-import React, { useEffect, useState, useContext, useRef } from 'react';
+import React, { useEffect, useState, useContext, useRef, useCallback } from 'react';
 import {
   View,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
   Text,
+  StyleSheet,
   Image,
   Dimensions,
   FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
   Alert,
   SafeAreaView,
   Animated,
   Platform,
+  StatusBar,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  RefreshControl,
 } from 'react-native';
 import { supabase } from '@services/supabase';
 import { User } from '@navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { MainStackParamList } from '@navigation/types';
-import CustomHeader from '@components/common/CustomHeader';
 import { AuthContext } from '@context/AuthContext';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, typography, layout, shadows } from '@styles/theme';
@@ -39,23 +42,38 @@ interface Post {
   user: User;
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+interface Photo {
+  id: string;
+  url: string;
+  caption?: string;
+  created_at: string;
+}
 
-// Fix typing for AnimatedFlatList
-const AnimatedFlatList = Animated.createAnimatedComponent<{
-  data: Post[];
-  renderItem: ({ item }: { item: Post }) => React.ReactElement;
-  keyExtractor: (item: Post) => string;
-  refreshing: boolean;
-  onRefresh: () => void;
-  showsVerticalScrollIndicator: boolean;
-  contentContainerStyle: any;
-  onScroll: (event: any) => void;
-  scrollEventThrottle: number;
-  ListEmptyComponent: React.ReactElement;
-}>(FlatList);
+interface ProfileWithPhotos extends User {
+  photos?: Photo[];
+}
 
-const HomeScreen: React.FC = () => {
+interface ViewableItemsChanged {
+  viewableItems: Array<{
+    item: Post;
+    key: string;
+    index: number;
+    isViewable: boolean;
+    section?: any;
+  }>;
+}
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+const HEADER_HEIGHT = 60;
+const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
+
+const AnimatedFlatList = Animated.createAnimatedComponent(
+  FlatList as new () => FlatList<Post>
+);
+
+export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { user } = useContext(AuthContext);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -63,45 +81,20 @@ const HomeScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
-  const lastScrollY = useRef(0);
+  const [preloadedProfiles, setPreloadedProfiles] = useState<Set<string>>(new Set());
 
-  const handleScroll = (event: any) => {
-    const currentScrollY = event.nativeEvent.contentOffset.y;
-    const direction = currentScrollY > lastScrollY.current ? 'down' : 'up';
-    lastScrollY.current = currentScrollY;
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, -TOTAL_HEADER_HEIGHT],
+    extrapolate: 'clamp'
+  });
 
-    if (direction === 'down') {
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: -44,
-          duration: 200,
-          useNativeDriver: true
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true
-        })
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true
-        })
-      ]).start();
-    }
-  };
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
+    outputRange: [1, 0.5, 0],
+    extrapolate: 'clamp'
+  });
 
   const requestContactsPermission = async () => {
     try {
@@ -163,9 +156,10 @@ const HomeScreen: React.FC = () => {
       const postsWithValidUrls = (data || []).map(post => ({
         ...post,
         url: post.url || '',
-      }));
+        user: Array.isArray(post.user) ? post.user[0] : post.user
+      })) as Post[];
 
-      setPosts(postsWithValidUrls as Post[]);
+      setPosts(postsWithValidUrls);
     } catch (err) {
       console.error('Error fetching posts:', err);
       Alert.alert('Error', 'Failed to fetch posts');
@@ -211,24 +205,76 @@ const HomeScreen: React.FC = () => {
     navigation.navigate('ProfileDetails', { userId });
   };
 
-  const renderPost = ({ item }: { item: Post }) => (
+  const preloadProfile = async (userId: string) => {
+    if (preloadedProfiles.has(userId)) return;
+
+    try {
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select(`
+          *,
+          photos (
+            id,
+            url,
+            caption,
+            created_at
+          )
+        `)
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+
+      // Prefetch profile picture and recent photos
+      if (profileData.profile_picture_url) {
+        await Image.prefetch(profileData.profile_picture_url);
+      }
+
+      if (profileData.photos) {
+        const photosToPreload = (profileData as ProfileWithPhotos).photos?.slice(0, 3) || [];
+        await Promise.all(photosToPreload.map(photo => Image.prefetch(photo.url)));
+      }
+
+      setPreloadedProfiles(prev => new Set([...prev, userId]));
+    } catch (error) {
+      console.error('Error preloading profile:', error);
+    }
+  };
+
+  const onViewableItemsChanged = useCallback(({ viewableItems, changed }: {
+    viewableItems: Array<{
+      item: Post;
+      key: string;
+      index: number | null;
+      isViewable: boolean;
+    }>;
+    changed: Array<{
+      item: Post;
+      key: string;
+      index: number | null;
+      isViewable: boolean;
+    }>;
+  }) => {
+    viewableItems.forEach(({ item }) => {
+      if (item?.user?.id) {
+        preloadProfile(item.user.id);
+      }
+    });
+  }, []);
+
+  const viewabilityConfig = {
+    itemVisiblePercentThreshold: 50
+  };
+
+  const viewabilityConfigCallbackPairs = useRef([
+    { viewabilityConfig, onViewableItemsChanged }
+  ]);
+
+  const renderPost = useCallback(({ item }: { item: Post }) => (
     <View style={styles.postContainer}>
       <TouchableOpacity
-        style={styles.postHeader}
-        onPress={() => navigateToProfile(item.user.id)}
-      >
-        <Image
-          source={{
-            uri: item.user.profile_picture_url || 'https://via.placeholder.com/40',
-            cache: 'reload'
-          }}
-          style={styles.userAvatar}
-        />
-        <Text style={styles.userName}>{item.user.name}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
         activeOpacity={0.9}
+        style={styles.postImageContainer}
         onPress={() => {
           setSelectedPost(item);
           setPhotoViewerVisible(true);
@@ -240,17 +286,25 @@ const HomeScreen: React.FC = () => {
             cache: 'reload'
           }}
           style={styles.postImage}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       </TouchableOpacity>
 
-      {item.caption && (
-        <View style={styles.captionContainer}>
-          <Text style={styles.caption}>{item.caption}</Text>
-        </View>
-      )}
+      <View style={styles.postHeader}>
+        <TouchableOpacity
+          style={styles.userInfo}
+          onPress={() => navigateToProfile(item.user.id)}
+        >
+          <Image
+            source={{
+              uri: item.user.profile_picture_url || 'https://via.placeholder.com/40',
+              cache: 'reload'
+            }}
+            style={styles.userAvatar}
+          />
+          <Text style={styles.userName}>{item.user.name}</Text>
+        </TouchableOpacity>
 
-      <View style={styles.postActions}>
         <TouchableOpacity
           onPress={() => handleLike(item)}
           style={styles.actionButton}
@@ -258,7 +312,27 @@ const HomeScreen: React.FC = () => {
           <Feather name="heart" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
+
+      {item.caption && (
+        <View style={styles.captionContainer}>
+          <Text style={styles.caption}>{item.caption}</Text>
+        </View>
+      )}
     </View>
+  ), []);
+
+  const handleScroll = Animated.event<NativeSyntheticEvent<NativeScrollEvent>>(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    { useNativeDriver: true }
+  );
+
+  const renderRefreshControl = () => (
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={handleRefresh}
+      progressViewOffset={HEADER_HEIGHT}
+      tintColor={colors.primary}
+    />
   );
 
   if (loading) {
@@ -271,17 +345,30 @@ const HomeScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <CustomHeader translateY={translateY} opacity={opacity} />
-      <FlatList
+      <Animated.View
+        style={[
+          styles.headerContainer,
+          {
+            transform: [{ translateY: headerTranslateY }],
+            opacity: headerOpacity,
+          }
+        ]}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>doggo</Text>
+        </View>
+      </Animated.View>
+
+      <AnimatedFlatList
         data={posts}
         renderItem={renderPost}
         keyExtractor={(item) => item.id}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
+        refreshControl={renderRefreshControl()}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.listContainer, { paddingTop: 44 }]}
+        contentContainerStyle={[styles.listContainer]}
         onScroll={handleScroll}
-        scrollEventThrottle={16}
+        scrollEventThrottle={1}
+        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No posts yet</Text>
@@ -314,17 +401,34 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   listContainer: {
-    paddingTop: spacing.sm,
+    paddingTop: HEADER_HEIGHT,
   },
   postContainer: {
     marginBottom: spacing.xl,
     backgroundColor: colors.background,
   },
+  postImageContainer: {
+    marginHorizontal: spacing.md,
+    backgroundColor: colors.background,
+    borderRadius: layout.borderRadius.lg,
+    overflow: 'hidden',
+  },
+  postImage: {
+    width: SCREEN_WIDTH - (spacing.md * 2),
+    height: 'auto',
+    aspectRatio: 1,
+    backgroundColor: colors.background,
+  },
   postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   userAvatar: {
     width: 32,
@@ -335,23 +439,10 @@ const styles = StyleSheet.create({
   userName: {
     color: colors.textPrimary,
     fontSize: typography.body.fontSize,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-  },
-  postImage: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_WIDTH,
-    backgroundColor: colors.surface,
-  },
-  postActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    fontWeight: '600',
   },
   actionButton: {
     padding: spacing.xs,
-    marginRight: spacing.sm,
   },
   emptyContainer: {
     flex: 1,
@@ -373,12 +464,35 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   captionContainer: {
-    padding: spacing.md,
-    backgroundColor: colors.background,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   caption: {
     fontSize: typography.body.fontSize,
     color: colors.textPrimary,
+  },
+  headerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    height: TOTAL_HEADER_HEIGHT,
+    backgroundColor: colors.background,
+  },
+  header: {
+    height: HEADER_HEIGHT,
+    marginTop: STATUS_BAR_HEIGHT,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    letterSpacing: 0.5,
+    textAlign: 'left',
   },
 });
 

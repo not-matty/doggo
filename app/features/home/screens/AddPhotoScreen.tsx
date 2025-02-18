@@ -50,7 +50,7 @@ const AddPhotoScreen: React.FC = () => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: false,
         quality: 1,
         exif: true,
@@ -111,7 +111,7 @@ const AddPhotoScreen: React.FC = () => {
 
       if (!urlData?.publicUrl) throw new Error('Failed to get public URL');
 
-      // Create photo record
+      // Create post record
       const { error: insertError } = await supabase
         .from('photos')
         .insert([{

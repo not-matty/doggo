@@ -18,6 +18,10 @@ import { supabase } from '@services/supabase';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const SCREEN_PADDING = 24;
+const CONTENT_WIDTH = SCREEN_WIDTH - (SCREEN_PADDING * 2);
+const CONTENT_HEIGHT = SCREEN_HEIGHT - 100 - (SCREEN_PADDING * 2); // Account for header and padding
+
 interface PhotoViewerProps {
     visible: boolean;
     photo: {
@@ -106,15 +110,17 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({ visible, photo, onClose, onDe
                 </View>
 
                 <View style={styles.imageContainer}>
-                    <Image
-                        source={{ uri: photo.url }}
-                        style={styles.image}
-                        resizeMode="contain"
-                    />
+                    <View style={styles.imageWrapper}>
+                        <Image
+                            source={{ uri: photo.url }}
+                            style={styles.image}
+                            resizeMode="contain"
+                        />
+                    </View>
                     {photo.caption && (
-                        <View style={styles.captionContainer}>
+                        <BlurView intensity={100} style={styles.captionContainer}>
                             <Text style={styles.caption}>{photo.caption}</Text>
-                        </View>
+                        </BlurView>
                     )}
                 </View>
             </SafeAreaView>
@@ -133,7 +139,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        ...shadows.sm,
+        backgroundColor: colors.background,
+        zIndex: 1,
     },
     backButton: {
         padding: 8,
@@ -145,20 +152,25 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background,
+        padding: SCREEN_PADDING,
+    },
+    imageWrapper: {
+        width: CONTENT_WIDTH,
+        height: CONTENT_HEIGHT,
+        backgroundColor: colors.background,
     },
     image: {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT * 0.8,
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.background,
     },
     captionContainer: {
         position: 'absolute',
-        bottom: 40,
-        left: 20,
-        right: 20,
+        bottom: SCREEN_PADDING,
+        left: SCREEN_PADDING,
+        right: SCREEN_PADDING,
         padding: 15,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: 8,
-        ...shadows.sm,
     },
     caption: {
         color: colors.textPrimary,
