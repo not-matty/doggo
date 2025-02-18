@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { ProfileStackParamList, User } from '@navigation/types';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
 import Feather from 'react-native-vector-icons/Feather';
@@ -42,6 +43,7 @@ interface Post {
   created_at: string;
 }
 
+type ProfilePageNavigationProp = NativeStackNavigationProp<ProfileStackParamList, 'ProfilePage'>;
 type ProfilePageRouteProp = RouteProp<ProfileStackParamList, 'ProfilePage'>;
 
 const { width } = Dimensions.get('window');
@@ -49,14 +51,17 @@ const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight |
 const HEADER_HEIGHT = 60;
 const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
 const PROFILE_IMAGE_SIZE = 80;
-const GALLERY_SPACING = 24;
-const GALLERY_COLUMN_WIDTH = (width - GALLERY_SPACING * 3) / 2;
+const HEADER_PADDING = 16;
+const PHOTO_GAP = 16;
+const GALLERY_COLUMN_WIDTH = (width - (HEADER_PADDING * 2) - PHOTO_GAP) / 2;
+const USERNAME_LEFT = HEADER_PADDING;
+const PHOTO_WIDTH = (width - (HEADER_PADDING * 2));
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Photo>);
 
 const ProfilePage: React.FC = () => {
   const route = useRoute<ProfilePageRouteProp>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<ProfilePageNavigationProp>();
   const { user: authUser, signOut } = useContext(AuthContext);
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Photo[]>([]);
@@ -69,17 +74,13 @@ const ProfilePage: React.FC = () => {
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [aspectRatios, setAspectRatios] = useState<Record<string, number>>({});
   const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
+  const [leftColumn, setLeftColumn] = useState<Photo[]>([]);
+  const [rightColumn, setRightColumn] = useState<Photo[]>([]);
   const scrollY = new Animated.Value(0);
 
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, TOTAL_HEADER_HEIGHT],
     outputRange: [0, -TOTAL_HEADER_HEIGHT],
-    extrapolate: 'clamp'
-  });
-
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
-    outputRange: [0, 0.5, 1],
     extrapolate: 'clamp'
   });
 
@@ -92,20 +93,21 @@ const ProfilePage: React.FC = () => {
   const prefetchImages = async (imagesToPrefetch: Photo[]) => {
     try {
       // Create an array of prefetch promises
-      const prefetchPromises = imagesToPrefetch.map(post => {
+      const prefetchPromises = imagesToPrefetch.map(photo => {
         // Prefetch the image
-        const imagePrefetch = Image.prefetch(post.url);
+        const imagePrefetch = Image.prefetch(photo.url);
 
-        // Get image dimensions
-        const dimensionsPromise = new Promise<{ id: string; ratio: number }>((resolve, reject) => {
-          Image.getSize(post.url,
+        // Get image dimensions with error handling
+        const dimensionsPromise = new Promise<{ id: string; height: number }>((resolve) => {
+          Image.getSize(
+            photo.url,
             (width, height) => {
-              const aspectRatio = width / height;
-              resolve({ id: post.id, ratio: aspectRatio });
+              const scaledHeight = (GALLERY_COLUMN_WIDTH / width) * height;
+              resolve({ id: photo.id, height: scaledHeight });
             },
-            (error) => {
-              console.error('Error loading image dimensions:', error);
-              resolve({ id: post.id, ratio: 1 });
+            () => {
+              // Fallback to square if error
+              resolve({ id: photo.id, height: GALLERY_COLUMN_WIDTH });
             }
           );
         });
@@ -116,12 +118,12 @@ const ProfilePage: React.FC = () => {
       // Wait for all prefetch operations to complete
       const results = await Promise.all(prefetchPromises);
 
-      // Update aspect ratios
-      const newRatios: Record<string, number> = {};
-      results.forEach(([_, { id, ratio }]) => {
-        newRatios[id] = ratio;
+      // Update image heights
+      const newHeights: Record<string, number> = {};
+      results.forEach(([_, { id, height }]) => {
+        newHeights[id] = height;
       });
-      setAspectRatios(newRatios);
+      setImageHeights(newHeights);
     } catch (error) {
       console.error('Error prefetching images:', error);
     }
@@ -129,8 +131,7 @@ const ProfilePage: React.FC = () => {
 
   const fetchUserAndPosts = async () => {
     try {
-      const targetUserId = route.params?.userId || authUser?.id;
-      if (!targetUserId) {
+      if (!authUser?.id) {
         console.error('No user ID available');
         setLoading(false);
         return;
@@ -140,16 +141,18 @@ const ProfilePage: React.FC = () => {
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', targetUserId)
+        .eq('id', authUser.id)
         .single();
 
       if (userError) throw userError;
+
+      console.log('Fetched user data:', userData);
 
       // Fetch user's photos
       const { data: photosData, error: photosError } = await supabase
         .from('photos')
         .select('*')
-        .eq('user_id', targetUserId)
+        .eq('user_id', authUser.id)
         .order('created_at', { ascending: false });
 
       if (photosError) throw photosError;
@@ -175,7 +178,24 @@ const ProfilePage: React.FC = () => {
 
   useEffect(() => {
     fetchUserAndPosts();
-  }, [route.params?.userId, authUser?.id]);
+  }, [authUser?.id]);
+
+  useEffect(() => {
+    // Simple alternating distribution of posts between columns
+    const left: Photo[] = [];
+    const right: Photo[] = [];
+
+    posts.forEach((post, index) => {
+      if (index % 2 === 0) {
+        left.push(post);
+      } else {
+        right.push(post);
+      }
+    });
+
+    setLeftColumn(left);
+    setRightColumn(right);
+  }, [posts]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -330,8 +350,7 @@ const ProfilePage: React.FC = () => {
   };
 
   const navigateToEditProfile = () => {
-    // TODO: Implement edit profile navigation
-    Alert.alert('Coming Soon', 'Edit profile page is under development');
+    navigation.navigate('EditProfile');
   };
 
   const handleDeletePhoto = async (photoId: string) => {
@@ -364,21 +383,43 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  const renderGalleryItem: ListRenderItem<Photo> = ({ item }) => (
-    <TouchableOpacity
-      style={styles.galleryItem}
-      onPress={() => {
-        setSelectedPhoto(item);
-        setPhotoViewerVisible(true);
-      }}
-    >
-      <Image
-        source={{ uri: item.url }}
-        style={[styles.galleryImage, { aspectRatio: aspectRatios[item.id] || 1 }]}
-        resizeMode="cover"
-      />
-    </TouchableOpacity>
-  );
+  const renderColumn = (photos: Photo[], isRightColumn: boolean) => {
+    return (
+      <View style={[
+        styles.column,
+        {
+          marginLeft: isRightColumn ? PHOTO_GAP : 0,
+        }
+      ]}>
+        {photos.map((photo) => {
+          const height = imageHeights[photo.id] || GALLERY_COLUMN_WIDTH;
+          return (
+            <TouchableOpacity
+              key={photo.id}
+              style={[
+                styles.galleryItem,
+                {
+                  width: GALLERY_COLUMN_WIDTH,
+                  height,
+                  marginBottom: PHOTO_GAP,
+                }
+              ]}
+              onPress={() => {
+                setSelectedPhoto(photo);
+                setPhotoViewerVisible(true);
+              }}
+            >
+              <Image
+                source={{ uri: photo.url }}
+                style={styles.galleryImage}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
 
   if (loading) {
     return (
@@ -398,80 +439,72 @@ const ProfilePage: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Animated.View
-        style={[
-          styles.fixedHeader,
-          {
-            transform: [{ translateY: headerTranslateY }],
-            opacity: headerOpacity,
-          }
-        ]}
-      >
+      <View style={styles.fixedHeader}>
         <Text style={styles.headerUsername}>@{user?.username}</Text>
-      </Animated.View>
+      </View>
 
       <AnimatedFlatList
-        data={posts}
-        renderItem={renderGalleryItem}
-        numColumns={2}
-        columnWrapperStyle={styles.columnWrapper}
+        data={[]}
+        renderItem={() => null}
         refreshing={refreshing}
         onRefresh={handleRefresh}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingTop: TOTAL_HEADER_HEIGHT }]}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
         ListHeaderComponent={
-          <View style={styles.scrollableHeader}>
-            <Animated.View
-              style={[
-                styles.profileSection,
-                {
-                  transform: [{ scale: profileScale }]
-                }
-              ]}
-            >
-              <View style={styles.profileImageContainer}>
-                <TouchableOpacity onPress={handleProfileImagePress}>
-                  <Image
-                    source={{
-                      uri: user?.profile_picture_url || 'https://via.placeholder.com/160'
-                    }}
-                    style={styles.profileImage}
-                  />
-                </TouchableOpacity>
-              </View>
+          <>
+            <View style={styles.scrollableHeader}>
+              <View style={styles.profileSection}>
+                <View style={styles.profileHeader}>
+                  <View style={styles.profileImageContainer}>
+                    <Image
+                      source={{
+                        uri: user?.profile_picture_url || 'https://via.placeholder.com/80'
+                      }}
+                      style={styles.profileImage}
+                    />
+                  </View>
+                  <View style={styles.userInfo}>
+                    <Text style={styles.name}>{user?.name}</Text>
+                    {user?.bio && (
+                      <Text style={styles.bio}>{user.bio}</Text>
+                    )}
+                  </View>
+                </View>
 
-              <View style={styles.userInfo}>
-                <Text style={styles.name}>{user?.name}</Text>
-              </View>
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={navigateToEditProfile}
+                  >
+                    <Text style={styles.actionButtonText}>Edit Profile</Text>
+                  </TouchableOpacity>
 
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={navigateToEditProfile}
-                >
-                  <Text style={styles.actionButtonText}>Edit Profile</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={navigateToSettings}
-                >
-                  <Feather name="settings" size={20} color={colors.primary} />
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => setShowSettings(true)}
+                  >
+                    <Feather name="settings" size={20} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </Animated.View>
-          </View>
+            </View>
+            <View style={styles.galleryContainer}>
+              {renderColumn(leftColumn, false)}
+              {renderColumn(rightColumn, true)}
+            </View>
+          </>
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-            <Text style={styles.emptySubtext}>Share your first photo!</Text>
-          </View>
+          posts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No posts yet</Text>
+            </View>
+          ) : null
         }
       />
 
@@ -504,31 +537,34 @@ const styles = StyleSheet.create({
     height: TOTAL_HEADER_HEIGHT,
     backgroundColor: colors.background,
     zIndex: 1000,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
     paddingTop: STATUS_BAR_HEIGHT,
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingHorizontal: HEADER_PADDING,
   },
   headerUsername: {
     fontSize: typography.title.fontSize,
     fontWeight: '600',
     color: colors.textPrimary,
+    alignSelf: 'flex-start',
   },
   scrollableHeader: {
-    paddingTop: TOTAL_HEADER_HEIGHT + spacing.md,
-    paddingHorizontal: spacing.xl,
+    paddingTop: TOTAL_HEADER_HEIGHT + spacing.xl,
+    paddingHorizontal: HEADER_PADDING,
     backgroundColor: colors.background,
   },
   profileSection: {
-    alignItems: 'center',
     marginBottom: spacing.xl,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
   profileImageContainer: {
     width: PROFILE_IMAGE_SIZE,
     height: PROFILE_IMAGE_SIZE,
     borderRadius: PROFILE_IMAGE_SIZE / 2,
-    marginBottom: spacing.md,
+    marginRight: spacing.md,
     overflow: 'hidden',
     backgroundColor: colors.surface,
     ...Platform.select({
@@ -549,13 +585,19 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   userInfo: {
-    alignItems: 'center',
+    flex: 1,
   },
   name: {
     fontSize: 24,
     color: colors.textPrimary,
     fontWeight: '600',
     marginBottom: spacing.sm,
+  },
+  bio: {
+    fontSize: typography.body.fontSize,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    lineHeight: 20,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -578,21 +620,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   contentContainer: {
-    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl * 2,
   },
-  columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: GALLERY_SPACING,
+  galleryContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: HEADER_PADDING,
+    marginTop: spacing.xl,
+  },
+  column: {
+    flex: 1,
   },
   galleryItem: {
-    width: GALLERY_COLUMN_WIDTH,
-    marginBottom: GALLERY_SPACING,
     backgroundColor: colors.surface,
-    borderRadius: layout.borderRadius.md,
     overflow: 'hidden',
   },
   galleryImage: {
     width: '100%',
+    height: '100%',
     backgroundColor: colors.surface,
   },
   emptyContainer: {

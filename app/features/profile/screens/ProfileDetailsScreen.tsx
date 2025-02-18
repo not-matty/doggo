@@ -32,8 +32,10 @@ const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight |
 const HEADER_HEIGHT = 60;
 const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
 const PROFILE_IMAGE_SIZE = 80;
-const GALLERY_SPACING = 24;
-const GALLERY_COLUMN_WIDTH = (width - GALLERY_SPACING * 3) / 2;
+const HEADER_PADDING = 16;
+const PHOTO_GAP = 16;
+const GALLERY_COLUMN_WIDTH = (width - (HEADER_PADDING * 2) - PHOTO_GAP) / 2;
+const USERNAME_LEFT = HEADER_PADDING;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Post>);
 
@@ -49,16 +51,12 @@ const ProfileDetailsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const scrollY = new Animated.Value(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [leftColumn, setLeftColumn] = useState<Post[]>([]);
+  const [rightColumn, setRightColumn] = useState<Post[]>([]);
 
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, TOTAL_HEADER_HEIGHT],
     outputRange: [0, -TOTAL_HEADER_HEIGHT],
-    extrapolate: 'clamp'
-  });
-
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
-    outputRange: [0, 0.5, 1],
     extrapolate: 'clamp'
   });
 
@@ -95,21 +93,55 @@ const ProfileDetailsScreen: React.FC = () => {
     });
   }, [posts]);
 
+  useEffect(() => {
+    // Simple alternating distribution of posts between columns
+    const left: Post[] = [];
+    const right: Post[] = [];
+
+    posts.forEach((post, index) => {
+      if (index % 2 === 0) {
+        left.push(post);
+      } else {
+        right.push(post);
+      }
+    });
+
+    setLeftColumn(left);
+    setRightColumn(right);
+  }, [posts]);
+
   const fetchUserAndPosts = async () => {
     try {
       setIsLoading(true);
-      const userResponse = await api.get(`/users/${route.params.userId}`);
-      const postsResponse = await api.get(`/users/${route.params.userId}/posts`);
 
-      setUser(userResponse.data);
-      setPosts(postsResponse.data);
+      // Fetch user profile
+      const { data: userData, error: userError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', route.params.userId)
+        .single();
 
-      // Prefetch all images including profile picture
-      const allImages = [...postsResponse.data];
-      if (userResponse.data.profilePicture) {
-        await Image.prefetch(userResponse.data.profilePicture);
+      if (userError) throw userError;
+
+      // Fetch user's photos
+      const { data: photosData, error: photosError } = await supabase
+        .from('photos')
+        .select('*')
+        .eq('user_id', route.params.userId)
+        .order('created_at', { ascending: false });
+
+      if (photosError) throw photosError;
+
+      setUser(userData as User);
+      setPosts(photosData as Post[]);
+
+      // Prefetch all images in the background
+      await prefetchImages(photosData as Post[]);
+
+      // Also prefetch the profile picture if it exists
+      if (userData.profile_picture_url) {
+        await Image.prefetch(userData.profile_picture_url);
       }
-      await prefetchImages(allImages);
 
       setIsLoading(false);
     } catch (error) {
@@ -271,16 +303,17 @@ const ProfileDetailsScreen: React.FC = () => {
         // Prefetch the image
         const imagePrefetch = Image.prefetch(post.url);
 
-        // Get image dimensions
-        const dimensionsPromise = new Promise<{ id: string; ratio: number }>((resolve, reject) => {
-          Image.getSize(post.url,
+        // Get image dimensions with error handling
+        const dimensionsPromise = new Promise<{ id: string; height: number }>((resolve) => {
+          Image.getSize(
+            post.url,
             (width, height) => {
-              const aspectRatio = width / height;
-              resolve({ id: post.id, ratio: aspectRatio });
+              const scaledHeight = (GALLERY_COLUMN_WIDTH / width) * height;
+              resolve({ id: post.id, height: scaledHeight });
             },
-            (error) => {
-              console.error('Error loading image dimensions:', error);
-              resolve({ id: post.id, ratio: 1 });
+            () => {
+              // Fallback to square if error
+              resolve({ id: post.id, height: GALLERY_COLUMN_WIDTH });
             }
           );
         });
@@ -293,8 +326,8 @@ const ProfileDetailsScreen: React.FC = () => {
 
       // Update image heights
       const newHeights: Record<string, number> = {};
-      results.forEach(([_, { id, ratio }]) => {
-        newHeights[id] = ratio;
+      results.forEach(([_, { id, height }]) => {
+        newHeights[id] = height;
       });
       setImageHeights(newHeights);
     } catch (error) {
@@ -302,21 +335,43 @@ const ProfileDetailsScreen: React.FC = () => {
     }
   };
 
-  const renderGalleryItem: ListRenderItem<Post> = ({ item }) => (
-    <TouchableOpacity
-      style={styles.galleryItem}
-      onPress={() => {
-        setSelectedPost(item);
-        setPhotoViewerVisible(true);
-      }}
-    >
-      <Image
-        source={{ uri: item.url }}
-        style={[styles.galleryImage, { aspectRatio: imageHeights[item.id] || 1 }]}
-        resizeMode="cover"
-      />
-    </TouchableOpacity>
-  );
+  const renderColumn = (posts: Post[], isRightColumn: boolean) => {
+    return (
+      <View style={[
+        styles.column,
+        {
+          marginLeft: isRightColumn ? PHOTO_GAP : 0,
+        }
+      ]}>
+        {posts.map((post) => {
+          const height = imageHeights[post.id] || GALLERY_COLUMN_WIDTH;
+          return (
+            <TouchableOpacity
+              key={post.id}
+              style={[
+                styles.galleryItem,
+                {
+                  width: GALLERY_COLUMN_WIDTH,
+                  height,
+                  marginBottom: PHOTO_GAP,
+                }
+              ]}
+              onPress={() => {
+                setSelectedPost(post);
+                setPhotoViewerVisible(true);
+              }}
+            >
+              <Image
+                source={{ uri: post.url }}
+                style={styles.galleryImage}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -336,71 +391,63 @@ const ProfileDetailsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Animated.View
-        style={[
-          styles.fixedHeader,
-          {
-            transform: [{ translateY: headerTranslateY }],
-            opacity: headerOpacity,
-          }
-        ]}
-      >
+      <View style={styles.fixedHeader}>
         <Text style={styles.headerUsername}>@{user?.username}</Text>
-      </Animated.View>
+      </View>
 
       <AnimatedFlatList
-        data={posts}
-        renderItem={renderGalleryItem}
-        numColumns={2}
-        columnWrapperStyle={styles.columnWrapper}
+        data={[]}
+        renderItem={() => null}
         refreshing={refreshing}
         onRefresh={handleRefresh}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingTop: TOTAL_HEADER_HEIGHT }]}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
         ListHeaderComponent={
-          <View style={styles.scrollableHeader}>
-            <Animated.View
-              style={[
-                styles.profileSection,
-                {
-                  transform: [{ scale: profileScale }]
-                }
-              ]}
-            >
-              <View style={styles.profileImageContainer}>
-                <Image
-                  source={{
-                    uri: user?.profile_picture_url || 'https://via.placeholder.com/160'
-                  }}
-                  style={styles.profileImage}
-                />
-              </View>
+          <>
+            <View style={styles.scrollableHeader}>
+              <View style={styles.profileSection}>
+                <View style={styles.profileHeader}>
+                  <View style={styles.profileImageContainer}>
+                    <Image
+                      source={{
+                        uri: user?.profile_picture_url || 'https://via.placeholder.com/80'
+                      }}
+                      style={styles.profileImage}
+                    />
+                  </View>
+                  <View style={styles.userInfo}>
+                    <Text style={styles.name}>{user?.name}</Text>
+                  </View>
+                </View>
 
-              <View style={styles.userInfo}>
-                <Text style={styles.name}>{user?.name}</Text>
+                {!user?.is_placeholder && user?.id !== authUser?.id && (
+                  <TouchableOpacity
+                    style={styles.likeButton}
+                    onPress={handleLikeUser}
+                  >
+                    <Feather name="heart" size={20} color={colors.primary} />
+                    <Text style={styles.likeButtonText}>Like</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-
-              {!user?.is_placeholder && user?.id !== authUser?.id && (
-                <TouchableOpacity
-                  style={styles.likeButton}
-                  onPress={handleLikeUser}
-                >
-                  <Feather name="heart" size={20} color={colors.primary} />
-                  <Text style={styles.likeButtonText}>Like</Text>
-                </TouchableOpacity>
-              )}
-            </Animated.View>
-          </View>
+            </View>
+            <View style={styles.galleryContainer}>
+              {renderColumn(leftColumn, false)}
+              {renderColumn(rightColumn, true)}
+            </View>
+          </>
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-          </View>
+          posts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No posts yet</Text>
+            </View>
+          ) : null
         }
       />
 
@@ -433,31 +480,34 @@ const styles = StyleSheet.create({
     height: TOTAL_HEADER_HEIGHT,
     backgroundColor: colors.background,
     zIndex: 1000,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
     paddingTop: STATUS_BAR_HEIGHT,
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingHorizontal: HEADER_PADDING,
   },
   headerUsername: {
     fontSize: typography.title.fontSize,
     fontWeight: '600',
     color: colors.textPrimary,
+    alignSelf: 'flex-start',
   },
   scrollableHeader: {
-    paddingTop: TOTAL_HEADER_HEIGHT + spacing.md,
-    paddingHorizontal: spacing.xl,
+    paddingTop: TOTAL_HEADER_HEIGHT + spacing.xl,
+    paddingHorizontal: HEADER_PADDING,
     backgroundColor: colors.background,
   },
   profileSection: {
-    alignItems: 'center',
     marginBottom: spacing.xl,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
   profileImageContainer: {
     width: PROFILE_IMAGE_SIZE,
     height: PROFILE_IMAGE_SIZE,
     borderRadius: PROFILE_IMAGE_SIZE / 2,
-    marginBottom: spacing.md,
+    marginRight: spacing.md,
     overflow: 'hidden',
     backgroundColor: colors.surface,
     ...Platform.select({
@@ -478,7 +528,7 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   userInfo: {
-    alignItems: 'center',
+    flex: 1,
   },
   name: {
     fontSize: 24,
@@ -504,21 +554,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   contentContainer: {
-    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl * 2,
   },
-  columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: GALLERY_SPACING,
+  galleryContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: HEADER_PADDING,
+    marginTop: spacing.xl,
+  },
+  column: {
+    flex: 1,
   },
   galleryItem: {
-    width: GALLERY_COLUMN_WIDTH,
-    marginBottom: GALLERY_SPACING,
     backgroundColor: colors.surface,
-    borderRadius: layout.borderRadius.md,
     overflow: 'hidden',
   },
   galleryImage: {
     width: '100%',
+    height: '100%',
     backgroundColor: colors.surface,
   },
   emptyContainer: {

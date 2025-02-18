@@ -78,8 +78,9 @@ export type MessagesStackParamList = {
  * Profile stack: 
  */
 export type ProfileStackParamList = {
-  ProfilePage: { userId: string };
+  ProfilePage: undefined;
   ProfileDetails: { userId: string };
+  EditProfile: undefined;
   // Add other Profile stack screens here if needed
 };
 
@@ -106,6 +107,7 @@ export type User = {
   email?: string;
   phone?: string;
   likes?: number;
+  bio?: string;
   created_at: string;
   updated_at: string;
   is_placeholder?: boolean;

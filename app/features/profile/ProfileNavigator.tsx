@@ -4,6 +4,7 @@ import React, { useContext } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import ProfilePage from './screens/ProfilePage';
 import ProfileDetailsPage from './screens/ProfileDetailsScreen';
+import EditProfileScreen from './screens/EditProfileScreen';
 import { ProfileStackParamList } from '@navigation/types';
 import { AuthContext } from '@context/AuthContext';
 import { colors } from '@styles/theme';
@@ -18,7 +19,6 @@ const ProfileNavigator: React.FC = () => {
       <ProfileStack.Screen
         name="ProfilePage"
         component={ProfilePage}
-        initialParams={{ userId: user?.id }}
         options={{ headerShown: false }}
       />
       <ProfileStack.Screen
@@ -30,6 +30,21 @@ const ProfileNavigator: React.FC = () => {
           headerTransparent: true,
           headerBackTitleVisible: false,
           headerTintColor: colors.primary
+        }}
+      />
+      <ProfileStack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{
+          headerShown: true,
+          headerTitle: 'Edit Profile',
+          headerBackTitleVisible: false,
+          headerTintColor: colors.primary,
+          headerStyle: {
+            backgroundColor: colors.background,
+            shadowColor: 'transparent',
+            elevation: 0,
+          },
         }}
       />
       {/* Add other Profile stack screens here if needed */}
