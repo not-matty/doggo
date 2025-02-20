@@ -11,24 +11,31 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  SafeAreaView,
+  ScrollView,
 } from 'react-native';
 import { AuthContext } from '@context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
+import { colors, spacing, typography, layout } from '@styles/theme';
 
 type CompleteProfileScreenNavigationProp = StackNavigationProp<
   AuthStackParamList,
   'CompleteProfile'
 >;
 
+const MAX_BIO_LENGTH = 150;
+
 const CompleteProfileScreen: React.FC = () => {
   const { user, updateProfile } = useContext(AuthContext);
   const navigation = useNavigation<CompleteProfileScreenNavigationProp>();
-
   const [bio, setBio] = useState('');
   const [profilePictureUrl, setProfilePictureUrl] = useState('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [saving, setSaving] = useState(false);
 
   const handleCompleteProfile = async () => {
     if (!bio.trim()) {
@@ -45,7 +52,7 @@ const CompleteProfileScreen: React.FC = () => {
         profile_picture_url: profilePictureUrl || null,
       });
       Alert.alert('Success', 'Your profile has been updated.');
-      
+
       // Navigate to the main app screen (MainNavigator) via the parent navigator.
       const parent = navigation.getParent();
       if (parent) {
@@ -65,54 +72,86 @@ const CompleteProfileScreen: React.FC = () => {
     }
   };
 
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await updateProfile({ bio });
+      // Navigation will be handled by AuthContext
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      Alert.alert('Error', 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Text style={styles.title}>Complete Your Profile</Text>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+        >
+          <ScrollView
+            style={styles.scrollContainer}
+            contentContainerStyle={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.headerContainer}>
+              <Text style={styles.title}>Complete Your Profile</Text>
+              <Text style={styles.subtitle}>Tell us a bit about yourself</Text>
+            </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Bio</Text>
-        <TextInput
-          placeholder="Tell us about yourself"
-          value={bio}
-          onChangeText={setBio}
-          style={[styles.input, styles.textArea]}
-          placeholderTextColor="#888"
-          multiline
-          numberOfLines={4}
-          accessibilityLabel="Bio Input"
-        />
-      </View>
+            <View style={styles.inputContainer}>
+              <View style={styles.bioHeader}>
+                <Text style={styles.label}>Bio</Text>
+                <Text style={styles.charCount}>
+                  {bio.length}/{MAX_BIO_LENGTH}
+                </Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.bioInput]}
+                value={bio}
+                onChangeText={(text) => {
+                  if (text.length <= MAX_BIO_LENGTH) {
+                    setBio(text);
+                  }
+                }}
+                placeholder="Write a short bio about yourself"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                maxLength={MAX_BIO_LENGTH}
+              />
+            </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Profile Picture URL</Text>
-        <TextInput
-          placeholder="Enter image URL (optional)"
-          value={profilePictureUrl}
-          onChangeText={setProfilePictureUrl}
-          style={styles.input}
-          placeholderTextColor="#888"
-          keyboardType="url"
-          autoCapitalize="none"
-          accessibilityLabel="Profile Picture URL Input"
-        />
-      </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Profile Picture URL</Text>
+              <TextInput
+                placeholder="Enter image URL (optional)"
+                value={profilePictureUrl}
+                onChangeText={setProfilePictureUrl}
+                style={styles.input}
+                placeholderTextColor="#888"
+                keyboardType="url"
+                autoCapitalize="none"
+                accessibilityLabel="Profile Picture URL Input"
+              />
+            </View>
 
-      <TouchableOpacity
-        style={styles.completeButton}
-        onPress={handleCompleteProfile}
-        disabled={loading}
-        accessibilityLabel="Complete Profile Button"
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.completeButtonText}>Complete Profile</Text>
-        )}
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+            <TouchableOpacity
+              style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              <Text style={styles.saveButtonText}>
+                {saving ? 'Saving...' : 'Continue'}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -121,51 +160,74 @@ export default CompleteProfileScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 30,
-    paddingTop: 50,
+    backgroundColor: colors.background,
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: spacing.xl,
+  },
+  headerContainer: {
+    marginBottom: spacing.xl * 2,
   },
   title: {
-    fontSize: 28,
-    color: '#000',
+    fontSize: 32,
     fontWeight: '700',
-    alignSelf: 'center',
-    marginBottom: 40,
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  subtitle: {
+    fontSize: typography.body.fontSize,
+    color: colors.textSecondary,
   },
   inputContainer: {
-    marginBottom: 25,
+    marginBottom: spacing.xl,
+  },
+  bioHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
   },
   label: {
-    fontSize: 16,
-    color: '#000',
-    marginBottom: 8,
+    fontSize: typography.body.fontSize,
     fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  charCount: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textSecondary,
   },
   input: {
-    height: 50,
-    borderColor: '#ddd',
+    backgroundColor: colors.surface,
+    borderRadius: layout.borderRadius.md,
+    padding: spacing.md,
+    fontSize: typography.body.fontSize,
+    color: colors.textPrimary,
     borderWidth: 1,
-    borderRadius: 25,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
+    borderColor: colors.divider,
   },
-  textArea: {
-    height: 100,
+  bioInput: {
+    height: 120,
     textAlignVertical: 'top',
-    paddingTop: 15,
   },
-  completeButton: {
-    backgroundColor: '#000',
-    paddingVertical: 15,
-    borderRadius: 25,
+  saveButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.lg,
+    borderRadius: layout.borderRadius.lg,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: spacing.xl,
   },
-  completeButtonText: {
-    color: '#fff',
-    fontSize: 18,
+  saveButtonDisabled: {
+    opacity: 0.7,
+  },
+  saveButtonText: {
+    color: colors.background,
+    fontSize: typography.title.fontSize,
     fontWeight: '600',
   },
 });

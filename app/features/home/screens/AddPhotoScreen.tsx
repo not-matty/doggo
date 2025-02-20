@@ -14,6 +14,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@services/supabase';
@@ -144,44 +146,46 @@ const AddPhotoScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <Image
-          source={{ uri: selectedImage }}
-          style={styles.image}
-          resizeMode="contain"
-        />
-
-        <View style={styles.captionContainer}>
-          <TextInput
-            style={styles.captionInput}
-            placeholder="Write a caption..."
-            placeholderTextColor={colors.textSecondary}
-            value={caption}
-            onChangeText={setCaption}
-            multiline
-            maxLength={2200}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.container}
+        >
+          <Image
+            source={{ uri: selectedImage }}
+            style={styles.image}
+            resizeMode="contain"
           />
-        </View>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, uploading && styles.buttonDisabled]}
-            onPress={handleUpload}
-            disabled={uploading}
-          >
-            {uploading ? (
-              <ActivityIndicator color={colors.background} />
-            ) : (
-              <Text style={styles.buttonText}>Share</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          <View style={styles.captionContainer}>
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Write a caption..."
+              placeholderTextColor={colors.textSecondary}
+              value={caption}
+              onChangeText={setCaption}
+              multiline
+              maxLength={2200}
+            />
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.button, uploading && styles.buttonDisabled]}
+              onPress={handleUpload}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <ActivityIndicator color={colors.background} />
+              ) : (
+                <Text style={styles.buttonText}>Share</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 };
 

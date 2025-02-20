@@ -81,7 +81,14 @@ const LikesScreen: React.FC = () => {
     };
 
     const navigateToProfile = (userId: string) => {
-        navigation.navigate('ProfileDetails' as never, { userId } as never);
+        // If it's the current user's profile, navigate directly to the Profile tab
+        if (user?.id === userId) {
+            // @ts-ignore - Navigating to root tab
+            navigation.navigate('Profile');
+        } else {
+            // If it's another user's profile, navigate to their ProfileDetails
+            navigation.navigate('ProfileDetails' as never, { userId } as never);
+        }
     };
 
     const renderMatch = ({ item }: { item: Match }) => (

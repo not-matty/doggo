@@ -1,88 +1,120 @@
 // UserItem.tsx
 
-import React from 'react';
-import { TouchableOpacity, View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useContext } from 'react';
+import { TouchableOpacity, View, Text, StyleSheet, Dimensions, Image, Platform } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { ProfileStackParamList, Profile } from '@navigation/types';
-import PhotoCarousel from '@components/common/PhotoCarousel';
+import { SearchStackParamList, User } from '@navigation/types';
+import { colors, spacing, typography, shadows } from '@styles/theme';
+import { AuthContext } from '@context/AuthContext';
 
 type UserItemProps = {
-  profile: Profile;
+  profile: User;
 };
 
-const { width, height } = Dimensions.get('window');
-const SEARCH_BAR_HEIGHT = 70; // Consider passing this as a prop or managing layout globally
+const { width } = Dimensions.get('window');
 
-type NavigationType = StackNavigationProp<ProfileStackParamList, 'ProfilePage'>;
+type NavigationType = NavigationProp<SearchStackParamList, 'SearchPage'>;
 
 const UserItem: React.FC<UserItemProps> = ({ profile }) => {
   const navigation = useNavigation<NavigationType>();
+  const { user: authUser } = useContext(AuthContext);
 
   const navigateToProfile = () => {
-    navigation.navigate('ProfilePage', { userId: profile.id });
+    // If it's the current user's profile, navigate directly to the Profile tab
+    if (authUser?.id === profile.id) {
+      // @ts-ignore - Navigating to root tab
+      navigation.navigate('Profile');
+    } else {
+      // If it's another user's profile, navigate to their ProfileDetails
+      navigation.navigate('ProfileDetails', { userId: profile.id });
+    }
   };
 
   return (
     <TouchableOpacity
-      style={styles.cardContainer}
+      style={styles.container}
       onPress={navigateToProfile}
       activeOpacity={0.8}
       accessibilityLabel={`View profile of ${profile.name}`}
     >
-      {profile.photos && profile.photos.length > 0 ? (
-        <PhotoCarousel photos={profile.photos} />
-      ) : (
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>No Photos Available</Text>
-        </View>
-      )}
+      <View style={styles.avatarContainer}>
+        <Image
+          source={
+            profile.profile_picture_url
+              ? { uri: profile.profile_picture_url }
+              : require('@assets/images/Default_pfp.svg.png')
+          }
+          style={styles.avatar}
+          resizeMode="cover"
+        />
+      </View>
       <View style={styles.infoContainer}>
-        <Text style={styles.name}>{profile.name}</Text>
+        <Text style={styles.name} numberOfLines={1}>{profile.name}</Text>
+        <Text style={styles.username} numberOfLines={1}>@{profile.username}</Text>
       </View>
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  cardContainer: {
-    width: width,
-    height: height - SEARCH_BAR_HEIGHT - 60, // Consider using flex properties instead
-    backgroundColor: '#fff', // Changed to white for consistency
-    marginBottom: 10, // Added margin for spacing between items
-    borderRadius: 15, // Added border radius for a smoother look
-    overflow: 'hidden', // Ensures child components adhere to border radius
-    elevation: 3, // Added shadow for depth (Android)
-    shadowColor: '#000', // Shadow for iOS
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-  },
-  placeholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#ddd',
-    justifyContent: 'center',
+  container: {
+    flexDirection: 'row',
     alignItems: 'center',
+    padding: spacing.md,
+    backgroundColor: colors.background,
+    borderBottomWidth: Platform.select({
+      ios: 1,
+      android: 0,
+    }),
+    borderBottomColor: colors.divider,
+    ...Platform.select({
+      android: {
+        elevation: 1,
+        marginVertical: 1,
+      },
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+    }),
   },
-  placeholderText: {
-    color: '#888',
-    fontSize: 16,
+  avatarContainer: {
+    ...Platform.select({
+      android: {
+        elevation: 2,
+        backgroundColor: colors.background,
+        borderRadius: 25,
+      },
+      ios: {
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+    }),
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.surface,
   },
   infoContainer: {
-    position: 'absolute',
-    bottom: 10,
-    left: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 15,
+    marginLeft: spacing.md,
+    flex: 1,
   },
   name: {
-    fontSize: 20,
-    color: '#fff',
+    fontSize: typography.body.fontSize,
     fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  username: {
+    fontSize: typography.caption.fontSize,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });
 
-export default React.memo(UserItem); // Using React.memo for performance optimization
+export default React.memo(UserItem);

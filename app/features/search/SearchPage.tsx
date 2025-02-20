@@ -28,7 +28,8 @@ import { AuthContext } from '@context/AuthContext';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
-import { colors, layout } from '@styles/theme';
+import { colors, spacing, typography, layout } from '@styles/theme';
+import * as Contacts from 'expo-contacts';
 
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
@@ -48,9 +49,10 @@ interface Post {
   };
 }
 
-interface ExtendedUser extends UserWithPhotos {
+interface ExtendedUser extends Omit<UserWithPhotos, 'name'> {
   isRegistered: boolean;
   is_placeholder?: boolean;
+  name?: string;
 }
 
 interface UnregisteredContact {
@@ -82,6 +84,7 @@ const SearchPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
+  const [contactNames, setContactNames] = useState<Map<string, string>>(new Map());
 
   const translateY = useRef(new Animated.Value(0)).current;
   const lastScrollY = useRef(0);
@@ -157,6 +160,29 @@ const SearchPage: React.FC = () => {
     setExplorePosts(currentPosts => currentPosts.filter(post => post.id !== postId));
   };
 
+  const getContactName = async (phoneNumber: string) => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') return null;
+
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+      });
+
+      const normalizedSearchPhone = phoneNumber.replace(/[^0-9]/g, '');
+      const contact = data.find(contact =>
+        contact.phoneNumbers?.some(phone =>
+          phone.number && phone.number.replace(/[^0-9]/g, '') === normalizedSearchPhone
+        )
+      );
+
+      return contact?.name || null;
+    } catch (error) {
+      console.error('Error getting contact name:', error);
+      return null;
+    }
+  };
+
   const performSearch = useCallback(
     debounce(async (searchQuery: string) => {
       if (searchQuery.trim() === '') {
@@ -177,7 +203,7 @@ const SearchPage: React.FC = () => {
               created_at
             )
           `)
-          .ilike('name', `%${searchQuery}%`)
+          .ilike('username', `%${searchQuery}%`)
           .limit(20);
 
         if (registeredError) throw registeredError;
@@ -187,38 +213,41 @@ const SearchPage: React.FC = () => {
           .from('unregistered_contacts')
           .select('*')
           .eq('user_id', user?.id)
-          .ilike('name', `%${searchQuery}%`)
           .limit(20);
 
         if (unregisteredError) throw unregisteredError;
 
-        // Preload images for registered users
-        if (registeredUsers) {
-          (registeredUsers as UserWithPhotos[]).forEach(async (user) => {
-            if (user.profile_picture_url) {
-              await Image.prefetch(user.profile_picture_url);
-            }
-            // Preload first few photos if available
-            if (user.photos) {
-              const photosToPreload = user.photos.slice(0, 3);
-              await Promise.all(photosToPreload.map(photo => Image.prefetch(photo.url)));
-            }
-          });
+        // Get contact names for all users
+        const newContactNames = new Map<string, string>();
+
+        // Get names for registered users with phone numbers
+        for (const user of (registeredUsers as UserWithPhotos[]) || []) {
+          if (user.phone) {
+            const name = await getContactName(user.phone);
+            if (name) newContactNames.set(user.id, name);
+          }
         }
 
-        // Combine results
+        // Get names for unregistered contacts
+        for (const contact of (unregisteredContacts as UnregisteredContact[]) || []) {
+          const name = await getContactName(contact.phone);
+          if (name) newContactNames.set(contact.id, name);
+        }
+
+        setContactNames(newContactNames);
+
+        // Combine results with simplified display for unregistered users
         const combinedResults: ExtendedUser[] = [
           ...((registeredUsers as UserWithPhotos[]) || []).map(user => ({
             ...user,
             isRegistered: true,
-            profile_picture_url: user.profile_picture_url || 'https://via.placeholder.com/40'
+            profile_picture_url: user.profile_picture_url || require('@assets/images/Default_pfp.svg.png')
           })),
           ...((unregisteredContacts as UnregisteredContact[]) || []).map(contact => ({
             id: contact.id,
-            name: contact.name,
             phone: contact.phone,
-            username: 'Not on doggo',
-            profile_picture_url: 'https://via.placeholder.com/40',
+            username: 'Not on doggo yet',
+            profile_picture_url: require('@assets/images/Default_pfp.svg.png'),
             isRegistered: false,
             is_placeholder: true,
             created_at: contact.created_at,
@@ -339,64 +368,30 @@ const SearchPage: React.FC = () => {
     }
   };
 
-  const renderUserItem = ({ item }: { item: ExtendedUser }) => {
-    if (item.isRegistered) {
-      return (
-        <View style={styles.userItemContainer}>
-          <TouchableOpacity
-            style={styles.userInfoContainer}
-            onPress={() => navigation.navigate('ProfileDetails', { userId: item.id })}
-          >
-            <Image
-              source={{ uri: item.profile_picture_url || 'https://via.placeholder.com/40' }}
-              style={styles.userAvatar}
-            />
-            <View style={styles.userInfo}>
-              <Text style={styles.userNameText}>{item.name}</Text>
-              <Text style={styles.usernameText}>@{item.username}</Text>
-            </View>
-          </TouchableOpacity>
-
-          {item.id !== user?.id && (
-            <TouchableOpacity
-              style={styles.likeButton}
-              onPress={() => handleLikeUser(item.id, item.name)}
-            >
-              <Feather name="heart" size={20} color={colors.primary} />
-              <Text style={styles.likeButtonText}>Like</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
-    }
-
-    if (!item.phone) {
-      return (
-        <View style={styles.userItemContainer}>
-          <View style={styles.userInfo}>
-            <Text style={styles.userNameText}>{item.name}</Text>
-            <Text style={styles.unregisteredText}>Phone number not available</Text>
-          </View>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.userItemContainer}>
-        <View style={styles.userInfo}>
-          <Text style={styles.userNameText}>{item.name}</Text>
-          <Text style={styles.unregisteredText}>Not on doggo yet</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.likeButton}
-          onPress={() => handleLikeUnregistered(item.phone, item.name)}
-        >
-          <Feather name="heart" size={20} color={colors.primary} />
-          <Text style={styles.likeButtonText}>Like</Text>
-        </TouchableOpacity>
+  const renderUserItem = ({ item }: { item: ExtendedUser }) => (
+    <TouchableOpacity
+      style={styles.userItem}
+      onPress={() => {
+        // Always navigate to ProfileDetails with userId
+        navigation.navigate('ProfileDetails', { userId: item.id });
+      }}
+    >
+      <Image
+        source={item.profile_picture_url ? { uri: item.profile_picture_url } : require('@assets/images/Default_pfp.svg.png')}
+        style={styles.userAvatar}
+      />
+      <View style={styles.userInfo}>
+        <Text style={styles.userName}>
+          {contactNames.get(item.id) || (item.isRegistered ? item.username : 'Contact')}
+        </Text>
+        {item.isRegistered ? (
+          <Text style={styles.userUsername}>@{item.username}</Text>
+        ) : (
+          <Text style={styles.userUsername}>Not on doggo yet</Text>
+        )}
       </View>
-    );
-  };
+    </TouchableOpacity>
+  );
 
   const renderExplorePost = ({ item, index }: { item: Post; index: number }) => {
     const isEven = index % 2 === 0;
@@ -406,10 +401,13 @@ const SearchPage: React.FC = () => {
       <View style={styles.postContainer}>
         <TouchableOpacity
           style={styles.userHeader}
-          onPress={() => navigation.navigate('ProfileDetails', { userId: item.user.id })}
+          onPress={() => {
+            // Always navigate to ProfileDetails with userId
+            navigation.navigate('ProfileDetails', { userId: item.user.id });
+          }}
         >
           <Image
-            source={{ uri: item.user.profile_picture_url || 'https://via.placeholder.com/40' }}
+            source={item.user.profile_picture_url ? { uri: item.user.profile_picture_url } : require('@assets/images/Default_pfp.svg.png')}
             style={styles.userAvatar}
           />
           <Text style={styles.userName}>{item.user.name}</Text>
@@ -511,8 +509,26 @@ const SearchPage: React.FC = () => {
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.container}>
           <SearchBar query={query} setQuery={setQuery} translateY={translateY} />
-          <View style={[styles.contentContainer, { marginTop: 0 }]}>
-            {renderContent()}
+          <View style={styles.contentContainer}>
+            {query ? (
+              <FlatList
+                data={filteredUsers}
+                keyExtractor={(item) => item.id}
+                renderItem={renderUserItem}
+                ListEmptyComponent={<EmptyState message="No users found" />}
+              />
+            ) : (
+              <FlatList
+                data={explorePosts}
+                keyExtractor={(item) => item.id}
+                renderItem={renderExplorePost}
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                ListEmptyComponent={
+                  <EmptyState message="No posts to explore" />
+                }
+              />
+            )}
           </View>
 
           <PhotoViewer
@@ -538,63 +554,55 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
+  },
+  searchContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
+    backgroundColor: colors.background,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  resultsContainer: {
+    flex: 1,
+    paddingTop: 70 + spacing.md, // Add padding to account for search bar height
   },
   contentContainer: {
     flex: 1,
     marginTop: SEARCH_BAR_HEIGHT,
+    backgroundColor: colors.background,
   },
-  userItemContainer: {
+  userItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
-  },
-  userInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   userInfo: {
     flex: 1,
   },
-  userNameText: {
+  userName: {
     fontSize: 16,
     color: colors.textPrimary,
     fontWeight: '500',
   },
-  usernameText: {
+  userUsername: {
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 2,
-  },
-  unregisteredText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 2,
-    fontStyle: 'italic',
   },
   userAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
     marginRight: 12,
-  },
-  likeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: layout.borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  likeButtonText: {
-    color: colors.primary,
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
@@ -606,11 +614,6 @@ const styles = StyleSheet.create({
   },
   userHeader: {
     padding: 12,
-  },
-  userName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
   },
   postImage: {
     width: width,

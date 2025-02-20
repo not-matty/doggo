@@ -18,6 +18,8 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   RefreshControl,
+  Linking,
+  FlatListProps,
 } from 'react-native';
 import { supabase } from '@services/supabase';
 import { User } from '@navigation/types';
@@ -30,6 +32,8 @@ import { colors, spacing, typography, layout, shadows } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { BlurView } from 'expo-blur';
 import * as Contacts from 'expo-contacts';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type HomeScreenNavigationProp = StackNavigationProp<MainStackParamList, 'Home'>;
 
@@ -70,8 +74,8 @@ const HEADER_HEIGHT = 60;
 const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(
-  FlatList as new () => FlatList<Post>
-);
+  FlatList
+) as React.ComponentType<FlatListProps<Post>>;
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -170,10 +174,36 @@ export const HomeScreen: React.FC = () => {
   };
 
   useEffect(() => {
+    checkAndRequestImagePermissions();
     if (user?.id) {
       fetchPosts();
     }
   }, [user?.id]);
+
+  const checkAndRequestImagePermissions = async () => {
+    try {
+      const hasCheckedPermissions = await AsyncStorage.getItem('hasCheckedImagePermissions');
+      if (hasCheckedPermissions) return;
+
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Photo Access Required',
+          'doggo needs access to your photos to share and save images. Please enable it in your settings.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
+      }
+      await AsyncStorage.setItem('hasCheckedImagePermissions', 'true');
+    } catch (error) {
+      console.error('Error checking image permissions:', error);
+    }
+  };
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -202,7 +232,14 @@ export const HomeScreen: React.FC = () => {
   };
 
   const navigateToProfile = (userId: string) => {
-    navigation.navigate('ProfileDetails', { userId });
+    // If it's the current user's profile, navigate directly to the Profile tab
+    if (user?.id === userId) {
+      // @ts-ignore - Navigating to root tab
+      navigation.navigate('Profile');
+    } else {
+      // If it's another user's profile, navigate to their ProfileDetails
+      navigation.navigate('ProfileDetails', { userId });
+    }
   };
 
   const preloadProfile = async (userId: string) => {
@@ -362,7 +399,7 @@ export const HomeScreen: React.FC = () => {
       <AnimatedFlatList
         data={posts}
         renderItem={renderPost}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: Post) => item.id}
         refreshControl={renderRefreshControl()}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.listContainer]}

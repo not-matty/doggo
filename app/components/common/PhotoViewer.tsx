@@ -99,14 +99,12 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({ visible, photo, onClose, onDe
                         <Feather name="chevron-left" size={28} color={colors.textPrimary} />
                     </TouchableOpacity>
 
-                    {isOwner && (
-                        <TouchableOpacity
-                            style={styles.menuButton}
-                            onPress={handleDelete}
-                        >
-                            <Feather name="more-vertical" size={24} color={colors.textPrimary} />
-                        </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                        style={styles.menuButton}
+                        onPress={isOwner ? handleDelete : () => { }}
+                    >
+                        <Feather name="more-vertical" size={24} color={colors.textPrimary} />
+                    </TouchableOpacity>
                 </View>
 
                 <View style={styles.imageContainer}>

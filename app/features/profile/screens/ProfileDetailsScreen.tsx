@@ -1,6 +1,6 @@
 // app/features/profile/screens/ProfileDetailsScreen.tsx
 
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import {
   Animated,
   Platform,
   StatusBar,
+  SafeAreaView,
+  RefreshControl,
 } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { ProfileStackParamList, User, Post } from '@navigation/types';
@@ -24,6 +26,7 @@ import { colors, spacing, typography, layout } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { Feather } from '@expo/vector-icons';
 import api from '@services/api';
+import * as Contacts from 'expo-contacts';
 
 type ProfileDetailsRouteProp = RouteProp<ProfileStackParamList, 'ProfileDetails'>;
 
@@ -35,14 +38,28 @@ const PROFILE_IMAGE_SIZE = 80;
 const HEADER_PADDING = 16;
 const PHOTO_GAP = 16;
 const GALLERY_COLUMN_WIDTH = (width - (HEADER_PADDING * 2) - PHOTO_GAP) / 2;
-const USERNAME_LEFT = HEADER_PADDING;
+const BACK_BUTTON_WIDTH = 40;
+const USERNAME_LEFT = HEADER_PADDING + BACK_BUTTON_WIDTH;
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Post>);
+
+const DEFAULT_PLACEHOLDER_USER: User = {
+  id: 'placeholder',
+  name: '',  // Will be filled in with actual name
+  username: '',
+  profile_picture_url: require('@assets/images/Default_pfp.svg.png'),
+  phone: '',  // Will be filled in with actual phone
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  is_placeholder: true,
+  bio: 'Tap like to send them an anonymous invite to join doggo!'
+};
 
 const ProfileDetailsScreen: React.FC = () => {
   const route = useRoute<ProfileDetailsRouteProp>();
   const { user: authUser } = useContext(AuthContext);
   const [user, setUser] = useState<User | null>(null);
+  const [displayName, setDisplayName] = useState<string>('');
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -63,6 +80,12 @@ const ProfileDetailsScreen: React.FC = () => {
   const profileScale = scrollY.interpolate({
     inputRange: [-100, 0, TOTAL_HEADER_HEIGHT],
     outputRange: [1.2, 1, 0.8],
+    extrapolate: 'clamp'
+  });
+
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [1, 0],
     extrapolate: 'clamp'
   });
 
@@ -110,6 +133,29 @@ const ProfileDetailsScreen: React.FC = () => {
     setRightColumn(right);
   }, [posts]);
 
+  const getContactName = async (phoneNumber: string) => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') return null;
+
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+      });
+
+      const normalizedSearchPhone = phoneNumber.replace(/[^0-9]/g, '');
+      const contact = data.find(contact =>
+        contact.phoneNumbers?.some(phone =>
+          phone.number && phone.number.replace(/[^0-9]/g, '') === normalizedSearchPhone
+        )
+      );
+
+      return contact?.name || null;
+    } catch (error) {
+      console.error('Error getting contact name:', error);
+      return null;
+    }
+  };
+
   const fetchUserAndPosts = async () => {
     try {
       setIsLoading(true);
@@ -121,9 +167,40 @@ const ProfileDetailsScreen: React.FC = () => {
         .eq('id', route.params.userId)
         .single();
 
-      if (userError) throw userError;
+      if (userError) {
+        // If user not found, they might be unregistered
+        // Check unregistered_contacts table
+        const { data: unregisteredData, error: unregisteredError } = await supabase
+          .from('unregistered_contacts')
+          .select('name, phone')
+          .eq('id', route.params.userId)
+          .single();
 
-      // Fetch user's photos
+        if (unregisteredError) {
+          console.error('Error fetching unregistered contact:', unregisteredError);
+          throw unregisteredError;
+        }
+
+        // Create a placeholder user with the unregistered contact's info
+        const placeholderUser = {
+          ...DEFAULT_PLACEHOLDER_USER,
+          name: unregisteredData.name,
+          phone: unregisteredData.phone,
+        };
+
+        setUser(placeholderUser);
+        setPosts([]); // No posts for unregistered users
+        setIsLoading(false);
+        return;
+      }
+
+      // Get contact name if this is an unregistered user
+      if (userData.phone) {
+        const contactName = await getContactName(userData.phone);
+        setDisplayName(contactName || userData.username || 'Unknown User');
+      }
+
+      // User exists, fetch their photos
       const { data: photosData, error: photosError } = await supabase
         .from('photos')
         .select('*')
@@ -142,10 +219,10 @@ const ProfileDetailsScreen: React.FC = () => {
       if (userData.profile_picture_url) {
         await Image.prefetch(userData.profile_picture_url);
       }
-
-      setIsLoading(false);
     } catch (error) {
       console.error('Error fetching user data:', error);
+      Alert.alert('Error', 'Failed to load profile data');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -373,81 +450,79 @@ const ProfileDetailsScreen: React.FC = () => {
     );
   };
 
-  if (isLoading) {
+  const renderProfileInfo = () => {
+    if (!user) return null;
+
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" style={styles.loadingIndicator} />
+      <View style={styles.profileInfo}>
+        <Image
+          source={{ uri: user.profile_picture_url || 'https://via.placeholder.com/150' }}
+          style={styles.profileImage}
+        />
+        <Text style={styles.name}>{displayName}</Text>
+        <Text style={styles.username}>@{user.username}</Text>
+        {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
+
+        {authUser?.id !== user.id && (
+          <TouchableOpacity
+            style={[
+              styles.likeButton,
+              user.is_placeholder && { backgroundColor: colors.accent }
+            ]}
+            onPress={user.is_placeholder ? handleLikeUnregistered : handleLikeUser}
+          >
+            <Text style={[
+              styles.likeButtonText,
+              user.is_placeholder && { color: colors.background }
+            ]}>
+              {user.is_placeholder ? 'Invite' : 'Like'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
-  }
+  };
 
-  if (!user) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>User not found</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.fixedHeader}>
-        <Text style={styles.headerUsername}>@{user?.username}</Text>
-      </View>
+  const renderContent = () => (
+    <SafeAreaView style={styles.container}>
+      <Animated.View
+        style={[
+          styles.headerContainer,
+          {
+            transform: [{ translateY: headerTranslateY }],
+            opacity: headerOpacity,
+          }
+        ]}
+      >
+        <View style={styles.header}>
+          <Text style={[styles.username, { marginLeft: USERNAME_LEFT }]}>
+            {user?.username ? `@${user.username}` : ''}
+          </Text>
+        </View>
+      </Animated.View>
 
       <AnimatedFlatList
-        data={[]}
-        renderItem={() => null}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.contentContainer, { paddingTop: TOTAL_HEADER_HEIGHT }]}
+        data={posts}
+        renderItem={renderPost}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        contentContainerStyle={styles.contentContainer}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
         )}
-        scrollEventThrottle={16}
-        ListHeaderComponent={
-          <>
-            <View style={styles.scrollableHeader}>
-              <View style={styles.profileSection}>
-                <View style={styles.profileHeader}>
-                  <View style={styles.profileImageContainer}>
-                    <Image
-                      source={{
-                        uri: user?.profile_picture_url || 'https://via.placeholder.com/80'
-                      }}
-                      style={styles.profileImage}
-                    />
-                  </View>
-                  <View style={styles.userInfo}>
-                    <Text style={styles.name}>{user?.name}</Text>
-                  </View>
-                </View>
-
-                {!user?.is_placeholder && user?.id !== authUser?.id && (
-                  <TouchableOpacity
-                    style={styles.likeButton}
-                    onPress={handleLikeUser}
-                  >
-                    <Feather name="heart" size={20} color={colors.primary} />
-                    <Text style={styles.likeButtonText}>Like</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-            <View style={styles.galleryContainer}>
-              {renderColumn(leftColumn, false)}
-              {renderColumn(rightColumn, true)}
-            </View>
-          </>
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
         }
+        ListHeaderComponent={renderProfileInfo}
         ListEmptyComponent={
-          posts.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No posts yet</Text>
-            </View>
-          ) : null
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No posts yet</Text>
+          </View>
         }
       />
 
@@ -461,8 +536,18 @@ const ProfileDetailsScreen: React.FC = () => {
         onDelete={handleDeletePost}
         isOwner={selectedPost?.user_id === authUser?.id}
       />
-    </View>
+    </SafeAreaView>
   );
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return renderContent();
 };
 
 export default ProfileDetailsScreen;
@@ -471,6 +556,40 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  headerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    height: TOTAL_HEADER_HEIGHT,
+    backgroundColor: colors.background,
+  },
+  header: {
+    height: HEADER_HEIGHT,
+    marginTop: STATUS_BAR_HEIGHT,
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  username: {
+    fontSize: typography.title.fontSize,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'left',
+  },
+  contentContainer: {
+    paddingTop: TOTAL_HEADER_HEIGHT,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyText: {
+    fontSize: typography.body.fontSize,
+    color: colors.textSecondary,
   },
   fixedHeader: {
     position: 'absolute',
@@ -483,12 +602,6 @@ const styles = StyleSheet.create({
     paddingTop: STATUS_BAR_HEIGHT,
     justifyContent: 'center',
     paddingHorizontal: HEADER_PADDING,
-  },
-  headerUsername: {
-    fontSize: typography.title.fontSize,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    alignSelf: 'flex-start',
   },
   scrollableHeader: {
     paddingTop: TOTAL_HEADER_HEIGHT + spacing.xl,
@@ -536,7 +649,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: spacing.sm,
   },
-  likeButton: {
+  bio: {
+    fontSize: typography.body.fontSize,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    lineHeight: 20,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+  },
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -545,16 +668,32 @@ const styles = StyleSheet.create({
     borderRadius: layout.borderRadius.md,
     borderWidth: 1,
     borderColor: colors.primary,
-    marginTop: spacing.md,
+    marginHorizontal: spacing.sm,
   },
-  likeButtonText: {
+  actionButtonText: {
     color: colors.primary,
-    marginLeft: spacing.sm,
     fontSize: typography.body.fontSize,
     fontWeight: '500',
   },
-  contentContainer: {
-    paddingBottom: spacing.xl * 2,
+  mainContent: {
+    flex: 1,
+  },
+  profileInfo: {
+    alignItems: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  likeButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: layout.borderRadius.full,
+    marginTop: spacing.md,
+  },
+  likeButtonText: {
+    color: colors.background,
+    fontSize: typography.body.fontSize,
+    fontWeight: '600',
   },
   galleryContainer: {
     flexDirection: 'row',
@@ -573,21 +712,18 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.surface,
   },
-  emptyContainer: {
-    paddingTop: spacing.xl * 2,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyText: {
-    color: colors.textSecondary,
-    fontSize: typography.body.fontSize,
+  loadingIndicator: {
+    marginTop: spacing.xl,
   },
   errorText: {
     color: colors.textPrimary,
     fontSize: typography.body.fontSize,
     textAlign: 'center',
-    marginTop: spacing.xl,
-  },
-  loadingIndicator: {
     marginTop: spacing.xl,
   },
 });

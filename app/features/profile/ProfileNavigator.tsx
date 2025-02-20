@@ -19,7 +19,13 @@ const ProfileNavigator: React.FC = () => {
       <ProfileStack.Screen
         name="ProfilePage"
         component={ProfilePage}
-        options={{ headerShown: false }}
+        options={{
+          headerShown: true,
+          headerTitle: '',
+          headerTransparent: true,
+          headerBackTitleVisible: false,
+          headerTintColor: colors.primary
+        }}
       />
       <ProfileStack.Screen
         name="ProfileDetails"

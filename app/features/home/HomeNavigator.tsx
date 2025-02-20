@@ -3,8 +3,9 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from './screens/HomeScreen';
-import ProfileDetailsScreen from '../profile/screens/ProfilePage';
+import ProfileDetailsScreen from '../profile/screens/ProfileDetailsScreen';
 import { HomeStackParamList } from '@navigation/types';
+import { colors } from '@styles/theme';
 
 const Stack = createStackNavigator<HomeStackParamList>();
 
@@ -26,7 +27,11 @@ const HomeNavigator: React.FC = () => {
         name="ProfileDetails"
         component={ProfileDetailsScreen}
         options={{
-          headerShown: false,
+          headerShown: true,
+          headerTitle: '',
+          headerTransparent: true,
+          headerBackTitleVisible: false,
+          headerTintColor: colors.primary
         }}
       />
       {/* Add other Home stack screens here */}

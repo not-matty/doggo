@@ -1,7 +1,7 @@
 // app/context/AuthContext.tsx
 
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, Linking } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import { supabase } from '@services/supabase';
 import { User } from '@navigation/types';
@@ -47,6 +47,11 @@ interface ContactInfo {
   givenName?: string;
   familyName?: string;
 }
+
+// Add this helper function at the top of the file
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -96,9 +101,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Add this new function
-  const createPlaceholderProfile = async (contact: ContactInfo) => {
+  const getContactNameByPhone = async (phoneNumber: string): Promise<string> => {
     try {
-      const normalizedPhone = normalizePhoneNumber(contact.phoneNumber);
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') return 'Unknown';
+
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+      });
+
+      const normalizedSearchPhone = normalizePhoneNumber(phoneNumber);
+      const contact = data.find(contact =>
+        contact.phoneNumbers?.some(phone =>
+          phone.number && normalizePhoneNumber(phone.number) === normalizedSearchPhone
+        )
+      );
+
+      return contact ? (contact.name || 'Unknown') : 'Unknown';
+    } catch (error) {
+      console.error('Error getting contact name:', error);
+      return 'Unknown';
+    }
+  };
+
+  // Modify the createPlaceholderProfile function
+  const createPlaceholderProfile = async (phoneNumber: string) => {
+    try {
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
       // Check if a profile already exists for this phone number
       const { data: existingProfile, error: checkError } = await supabase
@@ -119,7 +148,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Create profile with only the required fields
       const profileData = {
-        name: contact.name || `${contact.givenName || ''} ${contact.familyName || ''}`.trim() || 'Unknown User',
         phone: normalizedPhone,
         username: `user${Date.now()}`,
         created_at: new Date().toISOString(),
@@ -144,34 +172,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // --------------------------
-  // Function: Import Contacts If First Login
-  // --------------------------
+  // Modify the importContactsIfFirstLogin function
   const importContactsIfFirstLogin = async (currentUser: User) => {
     try {
-      // Check if contacts have already been imported for this user
-      const { data: existingContacts, error: fetchError } = await supabase
-        .from('unregistered_contacts')
-        .select('*')
-        .eq('user_id', currentUser.id);
+      const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${currentUser.id}`);
+      const lastContactsUpdate = await AsyncStorage.getItem(`lastContactsUpdate_${currentUser.id}`);
+      const now = new Date().getTime();
+      const ONE_DAY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
-      if (fetchError) throw fetchError;
-
-      if (existingContacts && existingContacts.length > 0) {
-        console.log('Contacts already imported for user:', currentUser.id);
-        return;
+      // If it's not first login, check if we should update contacts
+      if (hasImportedContacts && lastContactsUpdate) {
+        const timeSinceLastUpdate = now - parseInt(lastContactsUpdate);
+        if (timeSinceLastUpdate < ONE_DAY) {
+          return; // Skip if last update was less than 24 hours ago
+        }
       }
 
-      // Request permission to access contacts
-      const permissionGranted = await requestContactsPermission();
-      if (!permissionGranted) {
-        console.log('Contacts permission not granted');
+      // Request permission if first time
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Contacts Access Required',
+          'doggo needs access to your contacts to help you connect with friends. You can enable this in your settings.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
         return;
       }
 
       // Fetch contacts from device
       const { data: deviceContacts } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
+        fields: [Contacts.Fields.PhoneNumbers],
       });
 
       if (deviceContacts.length === 0) {
@@ -179,7 +215,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
+      // Get existing unregistered contacts for this user
+      const { data: existingContacts, error: fetchError } = await supabase
+        .from('unregistered_contacts')
+        .select('phone')
+        .eq('user_id', currentUser.id);
+
+      if (fetchError) throw fetchError;
+
+      // Create a Set of existing phone numbers for faster lookup
+      const existingPhones = new Set(existingContacts?.map(contact => contact.phone) || []);
       const contactsToProcess = [];
+
+      // Get existing contacts to avoid duplicates
+      const { data: existingRegisteredContacts, error: registeredError } = await supabase
+        .from('contacts')
+        .select('contact_user_id')
+        .eq('user_id', currentUser.id);
+
+      if (registeredError) throw registeredError;
+
+      const existingContactIds = new Set(existingRegisteredContacts?.map(contact => contact.contact_user_id) || []);
 
       for (const contact of deviceContacts) {
         if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
@@ -194,13 +250,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 .eq('phone', normalizedPhone)
                 .single();
 
-              if (!existingUser) {
-                // Store unregistered contact
+              if (existingUser) {
+                // Skip if we already have this contact
+                if (!existingContactIds.has(existingUser.id)) {
+                  // If the contact is a registered user, add to contacts table
+                  const { error: contactError } = await supabase
+                    .from('contacts')
+                    .insert({
+                      user_id: currentUser.id,
+                      contact_user_id: existingUser.id,
+                      created_at: new Date().toISOString()
+                    });
+
+                  if (contactError) console.error('Error adding contact:', contactError);
+                }
+              } else if (!existingPhones.has(normalizedPhone)) {
+                // If not registered and not already in unregistered_contacts
                 contactsToProcess.push({
                   user_id: currentUser.id,
-                  name: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim(),
                   phone: normalizedPhone,
-                  created_at: new Date().toISOString(),
+                  created_at: new Date().toISOString()
                 });
               }
             }
@@ -208,19 +277,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
 
-      if (contactsToProcess.length === 0) {
-        console.log('No unregistered contacts to import');
-        return;
+      // Process unregistered contacts in smaller batches to avoid conflicts
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < contactsToProcess.length; i += BATCH_SIZE) {
+        const batch = contactsToProcess.slice(i, i + BATCH_SIZE);
+        const { error: insertError } = await supabase
+          .from('unregistered_contacts')
+          .insert(batch)
+          .select();
+
+        if (insertError) {
+          console.error('Error inserting batch:', insertError);
+          // Continue with next batch even if this one fails
+        }
       }
 
-      // Insert all unregistered contacts
-      const { error: insertError } = await supabase
-        .from('unregistered_contacts')
-        .insert(contactsToProcess);
+      // Update timestamps
+      await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
+      await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, now.toString());
 
-      if (insertError) throw insertError;
-
-      console.log(`Imported ${contactsToProcess.length} unregistered contacts for user:`, currentUser.id);
+      console.log(`Processed ${contactsToProcess.length} contacts for user:`, currentUser.id);
     } catch (error) {
       console.error('Error importing contacts:', error);
     }
@@ -296,10 +372,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     try {
       const normalizedPhone = normalizePhoneNumber(phone);
+
+      // First, check if user exists
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone', normalizedPhone)
+        .single();
+
+      if (!existingUser) {
+        throw new Error('No account found with this phone number. Please sign up first.');
+      }
+
+      // Generate OTP
+      const generatedOTP = generateOTP();
+
+      // Generate OTP via Supabase
       const { error } = await supabase.auth.signInWithOtp({
         phone: normalizedPhone,
       });
+
       if (error) throw error;
+
+      // Send custom SMS via Twilio Edge Function
+      const { error: smsError } = await supabase.functions.invoke('send-sms', {
+        body: {
+          phone: normalizedPhone,
+          message: `Your doggo verification code is: ${generatedOTP}. Valid for 10 minutes.`,
+        },
+      });
+
+      if (smsError) throw smsError;
+
+      // Store OTP temporarily
+      await AsyncStorage.setItem(`otp_${normalizedPhone}`, generatedOTP);
+      // Set OTP expiry
+      await AsyncStorage.setItem(`otp_expiry_${normalizedPhone}`, (Date.now() + 600000).toString()); // 10 minutes
     } catch (error: any) {
       console.error('Sign in error:', error);
       throw new Error(error.message);
@@ -325,10 +433,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     try {
       const normalizedPhone = normalizePhoneNumber(phone);
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: normalizedPhone,
-        token,
-        type: 'sms',
+
+      // Check if OTP is valid and not expired
+      const storedOTP = await AsyncStorage.getItem(`otp_${normalizedPhone}`);
+      const expiryTime = await AsyncStorage.getItem(`otp_expiry_${normalizedPhone}`);
+
+      if (!storedOTP || !expiryTime) {
+        throw new Error('OTP not found or expired. Please request a new one.');
+      }
+
+      if (Date.now() > parseInt(expiryTime)) {
+        // Clean up expired OTP
+        await AsyncStorage.removeItem(`otp_${normalizedPhone}`);
+        await AsyncStorage.removeItem(`otp_expiry_${normalizedPhone}`);
+        throw new Error('OTP has expired. Please request a new one.');
+      }
+
+      if (token !== storedOTP) {
+        throw new Error('Invalid OTP. Please try again.');
+      }
+
+      // Clean up used OTP
+      await AsyncStorage.removeItem(`otp_${normalizedPhone}`);
+      await AsyncStorage.removeItem(`otp_expiry_${normalizedPhone}`);
+
+      // Verify OTP via Edge Function
+      const { data, error } = await supabase.functions.invoke('verify-otp', {
+        body: {
+          phone: normalizedPhone,
+          token,
+        },
       });
 
       if (error) throw error;
@@ -369,6 +503,68 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const signUpWithPhone = async (phone: string, password: string, name: string, username: string) => {
+    try {
+      const normalizedPhone = normalizePhoneNumber(phone);
+
+      // Check if phone number is already registered
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone', normalizedPhone)
+        .single();
+
+      if (existingUser) {
+        throw new Error('This phone number is already registered. Please log in instead.');
+      }
+
+      // Generate OTP for verification
+      const generatedOTP = generateOTP();
+
+      // Generate OTP via Supabase
+      const { data, error } = await supabase.auth.signUp({
+        phone: normalizedPhone,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Create profile
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: data.user.id,
+            name,
+            phone: normalizedPhone,
+            username,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }]);
+
+        if (insertError) throw insertError;
+
+        // Send verification SMS
+        const { error: smsError } = await supabase.functions.invoke('send-sms', {
+          body: {
+            phone: normalizedPhone,
+            message: `Welcome to doggo! Your verification code is: ${generatedOTP}. Valid for 10 minutes.`,
+          },
+        });
+
+        if (smsError) throw smsError;
+
+        // Store OTP temporarily
+        await AsyncStorage.setItem(`otp_${normalizedPhone}`, generatedOTP);
+        // Set OTP expiry
+        await AsyncStorage.setItem(`otp_expiry_${normalizedPhone}`, (Date.now() + 600000).toString()); // 10 minutes
+      }
+    } catch (error: any) {
+      console.error('Sign up error:', error);
+      throw new Error(error.message);
+    }
+  };
+
   // --------------------------
   // Provide AuthContext Value
   // --------------------------
@@ -380,34 +576,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         signInWithPhone,
         signOut,
         verifyOtp,
-        signUpWithPhone: async (phone, password, name, username) => {
-          try {
-            const normalizedPhone = normalizePhoneNumber(phone);
-            const { data, error } = await supabase.auth.signUp({
-              phone: normalizedPhone,
-              password,
-            });
-            if (error) throw error;
-
-            if (data.user) {
-              const { error: insertError } = await supabase
-                .from('profiles')
-                .insert([{
-                  id: data.user.id,
-                  name,
-                  phone: normalizedPhone,
-                  username,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                }]);
-
-              if (insertError) throw insertError;
-            }
-          } catch (error: any) {
-            console.error('Sign up error:', error);
-            throw new Error(error.message);
-          }
-        },
+        signUpWithPhone,
         isUsernameTaken: async (username: string): Promise<boolean> => {
           try {
             const { data, error } = await supabase
