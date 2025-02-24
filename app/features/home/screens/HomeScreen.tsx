@@ -40,10 +40,33 @@ type HomeScreenNavigationProp = StackNavigationProp<MainStackParamList, 'Home'>;
 interface Post {
   id: string;
   url: string;
-  created_at: string;
   caption?: string;
+  created_at: string;
   user_id: string;
-  user: User;
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    profile_picture_url?: string | null;
+    clerk_id: string;
+    likes?: number;
+  };
+}
+
+type PhotoWithProfile = {
+  id: string;
+  url: string;
+  caption?: string;
+  created_at: string;
+  user_id: string;
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    profile_picture_url: string | null;
+    clerk_id: string;
+    likes: number;
+  };
 }
 
 interface Photo {
@@ -119,28 +142,7 @@ export const HomeScreen: React.FC = () => {
 
   const fetchPosts = async () => {
     try {
-      if (!user?.id) return;
-
-      const hasPermission = await requestContactsPermission();
-      if (!hasPermission) {
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-
-      // Get contacts first
-      const { data: contacts, error: contactsError } = await supabase
-        .from('contacts')
-        .select('contact_user_id')
-        .eq('user_id', user.id);
-
-      if (contactsError) throw contactsError;
-
-      const contactIds = contacts.map(c => c.contact_user_id);
-      // Include user's own posts
-      contactIds.push(user.id);
-
-      // Fetch photos from contacts and the user
+      setLoading(true);
       const { data, error } = await supabase
         .from('photos')
         .select(`
@@ -149,23 +151,41 @@ export const HomeScreen: React.FC = () => {
           caption,
           created_at,
           user_id,
-          user:profiles (*)
+          user:profiles!user_id (
+            id,
+            name,
+            username,
+            profile_picture_url,
+            clerk_id,
+            likes
+          )
         `)
-        .in('user_id', contactIds)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(20)
+        .returns<PhotoWithProfile[]>();
 
       if (error) throw error;
 
       // Ensure we have valid URLs for all posts
       const postsWithValidUrls = (data || []).map(post => ({
-        ...post,
+        id: post.id,
         url: post.url || '',
-        user: Array.isArray(post.user) ? post.user[0] : post.user
-      })) as Post[];
+        caption: post.caption,
+        created_at: post.created_at,
+        user_id: post.user_id,
+        user: {
+          id: post.user.id,
+          name: post.user.name,
+          username: post.user.username,
+          profile_picture_url: post.user.profile_picture_url || null,
+          clerk_id: post.user.clerk_id,
+          likes: post.user.likes || 0
+        }
+      }));
 
       setPosts(postsWithValidUrls);
-    } catch (err) {
-      console.error('Error fetching posts:', err);
+    } catch (error: any) {
+      console.error('Error fetching posts:', error);
       Alert.alert('Error', 'Failed to fetch posts');
     } finally {
       setLoading(false);
@@ -216,17 +236,30 @@ export const HomeScreen: React.FC = () => {
 
   const handleLike = async (post: Post) => {
     try {
-      // Add to likes table
-      const { error } = await supabase
-        .from('likes')
-        .insert([{
-          liker_id: user?.id,
-          liked_id: post.user.id
-        }]);
+      if (!user?.id) return;
 
-      if (error) throw error;
-    } catch (err) {
-      console.error('Error liking post:', err);
+      const { error: likeError } = await supabase
+        .from('likes')
+        .insert([
+          {
+            liker_id: user.id,
+            liked_id: post.user_id,
+            created_at: new Date().toISOString()
+          }
+        ]);
+
+      if (likeError) throw likeError;
+
+      // Optimistically update UI
+      const updatedPosts = posts.map(p =>
+        p.id === post.id
+          ? { ...p, user: { ...p.user, likes: (p.user.likes || 0) + 1 } }
+          : p
+      );
+      setPosts(updatedPosts);
+
+    } catch (error: any) {
+      console.error('Error liking post:', error);
       Alert.alert('Error', 'Failed to like post');
     }
   };

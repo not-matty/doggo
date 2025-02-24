@@ -71,7 +71,7 @@ const AddPhotoScreen: React.FC = () => {
   };
 
   const handleUpload = async () => {
-    if (!selectedImage || !user) return;
+    if (!selectedImage || !user?.id) return;
 
     setUploading(true);
     try {
@@ -95,7 +95,7 @@ const AddPhotoScreen: React.FC = () => {
 
       // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
-        .from('posts')
+        .from('photos')
         .upload(fileName, formData);
 
       if (uploadError) {
@@ -108,20 +108,22 @@ const AddPhotoScreen: React.FC = () => {
 
       // Get public URL
       const { data: urlData } = supabase.storage
-        .from('posts')
+        .from('photos')
         .getPublicUrl(fileName);
 
       if (!urlData?.publicUrl) throw new Error('Failed to get public URL');
 
-      // Create post record
+      // Create photo record
       const { error: insertError } = await supabase
         .from('photos')
         .insert([{
           user_id: user.id,
           url: urlData.publicUrl,
-          caption: caption.trim() || undefined,
-          created_at: new Date().toISOString(),
-        }]);
+          caption: caption.trim() || null,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
 
       if (insertError) {
         console.error('Database insert error:', insertError);

@@ -1,6 +1,6 @@
 // app/features/auth/screens/VerifyOTPScreen.tsx
 
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,12 @@ import {
   SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
-import { AuthContext } from '@context/AuthContext';
 import { RouteProp, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
 import { colors, spacing, typography, layout } from '@styles/theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useSignIn } from '@clerk/clerk-expo';
 
 type VerifyOTPScreenRouteProp = RouteProp<AuthStackParamList, 'VerifyOTP'>;
 type VerifyOTPScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'VerifyOTP'>;
@@ -32,10 +32,10 @@ type Props = {
 const RESEND_COOLDOWN = 30; // seconds
 
 const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
-  const { verifyOtp, signInWithPhone } = useContext(AuthContext);
+  const { signIn, setActive } = useSignIn();
   const navigation = useNavigation<VerifyOTPScreenNavigationProp>();
   const { phone } = route.params;
-  const [token, setToken] = useState('');
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
 
@@ -52,43 +52,50 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
   }, [cooldown]);
 
   const handleVerify = async () => {
-    if (!token.trim()) {
-      Alert.alert('Invalid Token', 'Please enter the OTP sent to your phone.');
+    if (!code.trim()) {
+      Alert.alert('Invalid Code', 'Please enter the verification code.');
       return;
     }
 
     try {
       setLoading(true);
-      await verifyOtp(phone, token);
-      // Upon successful verification, the AuthContext's listener will update the user state,
-      // triggering RootNavigator to navigate to MainNavigator (Home screen)
+
+      // Attempt to verify the code
+      const result = await signIn!.attemptFirstFactor({
+        strategy: "phone_code",
+        code
+      });
+
+      // Set the session active
+      await setActive!({ session: result.createdSessionId });
+
+      // The RootNavigator will automatically navigate to the main app
+      // when the auth state changes
     } catch (error: any) {
-      console.error('OTP Verification Error:', error);
-      let message = 'An error occurred during OTP verification.';
-
-      if (error?.status === 400) {
-        message = 'Invalid OTP. Please try again.';
-      } else if (error?.status === 404) {
-        message = 'OTP not found. Please request a new one.';
-      }
-
-      Alert.alert('Verification Error', message);
+      console.error('Verification Error:', error);
+      Alert.alert(
+        'Verification Failed',
+        error.message || 'Failed to verify code. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResendOTP = async () => {
+  const handleResendCode = async () => {
     if (cooldown > 0) return;
 
     try {
       setLoading(true);
-      await signInWithPhone(phone);
+      await signIn!.create({
+        identifier: phone,
+        strategy: "phone_code",
+      });
       setCooldown(RESEND_COOLDOWN);
-      Alert.alert('Success', 'A new OTP has been sent to your phone.');
+      Alert.alert('Success', 'A new verification code has been sent.');
     } catch (error: any) {
-      console.error('Resend OTP Error:', error);
-      Alert.alert('Error', 'Failed to send new OTP. Please try again.');
+      console.error('Resend Code Error:', error);
+      Alert.alert('Error', 'Failed to send new code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -110,16 +117,16 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
 
           <View style={styles.content}>
             <View style={styles.headerContainer}>
-              <Text style={styles.title}>Verify OTP</Text>
+              <Text style={styles.title}>Verify Code</Text>
               <Text style={styles.subtitle}>Enter the code sent to {phone}</Text>
             </View>
 
             <View style={styles.inputContainer}>
               <View style={styles.otpInputContainer}>
                 <TextInput
-                  placeholder="Enter OTP"
-                  value={token}
-                  onChangeText={setToken}
+                  placeholder="Enter verification code"
+                  value={code}
+                  onChangeText={setCode}
                   style={styles.otpInput}
                   keyboardType="number-pad"
                   maxLength={6}
@@ -146,14 +153,14 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
                 styles.resendButton,
                 (cooldown > 0 || loading) && styles.buttonDisabled
               ]}
-              onPress={handleResendOTP}
+              onPress={handleResendCode}
               disabled={cooldown > 0 || loading}
             >
               <Text style={[
                 styles.resendButtonText,
                 (cooldown > 0 || loading) && styles.buttonDisabledText
               ]}>
-                {cooldown > 0 ? `Resend OTP (${cooldown}s)` : 'Resend OTP'}
+                {cooldown > 0 ? `Resend Code (${cooldown}s)` : 'Resend Code'}
               </Text>
             </TouchableOpacity>
           </View>

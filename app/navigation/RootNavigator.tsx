@@ -1,26 +1,51 @@
 // app/navigation/RootNavigator.tsx
 
-import React, { useContext } from 'react';
+import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import AuthNavigator from '@features/auth/AuthNavigator';
 import MainNavigator from '@navigation/MainNavigator';
 import { RootStackParamList } from '@navigation/types';
-import { AuthContext } from '@context/AuthContext';
 import GlobalLayout from '@layouts/GlobalLayout';
+import { useAuth } from '@clerk/clerk-expo';
+import { View, ActivityIndicator, Text } from 'react-native';
+import { colors } from '@styles/theme';
+import { SignedIn, SignedOut } from '@components/auth/AuthGuard';
 
 const RootStack = createStackNavigator<RootStackParamList>();
 
+const LoadingScreen = () => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10 }}>
+    <ActivityIndicator size="large" color={colors.primary} />
+    <Text style={{ color: colors.textSecondary }}>Loading...</Text>
+  </View>
+);
+
 const RootNavigator: React.FC = () => {
-  const { user } = useContext(AuthContext);
+  const { isLoaded, isSignedIn } = useAuth();
+
+  console.log('RootNavigator - isLoaded:', isLoaded, 'isSignedIn:', isSignedIn);
+
+  if (!isLoaded) {
+    return <LoadingScreen />;
+  }
 
   return (
     <GlobalLayout>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          <RootStack.Screen name="MainNavigator" component={MainNavigator} />
-        ) : (
-          <RootStack.Screen name="AuthNavigator" component={AuthNavigator} />
-        )}
+        <RootStack.Screen name="AuthNavigator">
+          {() => (
+            <SignedOut fallback={<MainNavigator />}>
+              <AuthNavigator />
+            </SignedOut>
+          )}
+        </RootStack.Screen>
+        <RootStack.Screen name="MainNavigator">
+          {() => (
+            <SignedIn fallback={<AuthNavigator />}>
+              <MainNavigator />
+            </SignedIn>
+          )}
+        </RootStack.Screen>
       </RootStack.Navigator>
     </GlobalLayout>
   );

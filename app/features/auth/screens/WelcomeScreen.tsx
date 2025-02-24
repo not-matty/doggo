@@ -22,7 +22,7 @@ const WelcomeScreen: React.FC = () => {
             <View style={styles.content}>
                 <View style={styles.logoContainer}>
                     <Text style={styles.logo}>doggo</Text>
-                    <Text style={styles.tagline}>kawaii</Text>
+                    <Text style={styles.tagline}>ts so tuff</Text>
                 </View>
 
                 <View style={styles.buttonContainer}>

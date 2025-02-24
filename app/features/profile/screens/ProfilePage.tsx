@@ -34,13 +34,25 @@ interface Photo {
   user_id: string;
   created_at: string;
   caption?: string;
+  user?: {
+    id: string;
+    name: string;
+    username: string;
+    profile_picture_url?: string | null;
+    clerk_id: string;
+  };
 }
 
-interface Post {
+interface Profile {
   id: string;
-  photo_url: string;
-  caption?: string;
+  name: string;
+  username: string;
+  profile_picture_url?: string | null;
+  clerk_id: string;
+  bio?: string;
   created_at: string;
+  updated_at: string;
+  photos?: Photo[];
 }
 
 type ProfilePageNavigationProp = NativeStackNavigationProp<ProfileStackParamList, 'ProfilePage'>;
@@ -63,8 +75,8 @@ const ProfilePage: React.FC = () => {
   const route = useRoute<ProfilePageRouteProp>();
   const navigation = useNavigation<ProfilePageNavigationProp>();
   const { user: authUser, signOut } = useContext(AuthContext);
-  const [user, setUser] = useState<User | null>(null);
-  const [posts, setPosts] = useState<Photo[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -131,44 +143,45 @@ const ProfilePage: React.FC = () => {
 
   const fetchUserAndPosts = async () => {
     try {
-      if (!authUser?.id) {
-        console.error('No user ID available');
-        setLoading(false);
-        return;
-      }
+      setLoading(true);
+      if (!authUser?.id) return;
 
-      // Fetch user profile
-      const { data: userData, error: userError } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
+        .select(`
+          id,
+          name,
+          username,
+          profile_picture_url,
+          clerk_id,
+          bio,
+          created_at,
+          updated_at,
+          photos (
+            id,
+            url,
+            caption,
+            created_at,
+            user_id
+          )
+        `)
+        .eq('clerk_id', authUser.id)
         .single();
 
-      if (userError) throw userError;
+      if (profileError) throw profileError;
 
-      console.log('Fetched user data:', userData);
-
-      // Fetch user's photos
-      const { data: photosData, error: photosError } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .order('created_at', { ascending: false });
-
-      if (photosError) throw photosError;
-
-      setUser(userData as User);
-      setPosts(photosData as Photo[]);
-
-      // Prefetch all images in the background
-      prefetchImages(photosData as Photo[]);
-
-      // Also prefetch the profile picture if it exists
-      if (userData.profile_picture_url) {
-        Image.prefetch(userData.profile_picture_url);
+      if (profileData) {
+        setProfile(profileData);
+        if (profileData.photos) {
+          const sortedPhotos = [...profileData.photos].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+          setPhotos(sortedPhotos);
+          await prefetchImages(sortedPhotos);
+        }
       }
-    } catch (err) {
-      console.error('Error fetching data:', err);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
       Alert.alert('Error', 'Failed to load profile data');
     } finally {
       setLoading(false);
@@ -177,7 +190,9 @@ const ProfilePage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchUserAndPosts();
+    if (authUser?.id) {
+      fetchUserAndPosts();
+    }
   }, [authUser?.id]);
 
   useEffect(() => {
@@ -185,17 +200,17 @@ const ProfilePage: React.FC = () => {
     const left: Photo[] = [];
     const right: Photo[] = [];
 
-    posts.forEach((post, index) => {
+    photos.forEach((photo, index) => {
       if (index % 2 === 0) {
-        left.push(post);
+        left.push(photo);
       } else {
-        right.push(post);
+        right.push(photo);
       }
     });
 
     setLeftColumn(left);
     setRightColumn(right);
-  }, [posts]);
+  }, [photos]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -203,7 +218,7 @@ const ProfilePage: React.FC = () => {
   };
 
   const handleProfileImagePress = async () => {
-    if (!user || user.id !== authUser?.id) return;
+    if (!profile || profile.id !== authUser?.id) return;
 
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -229,7 +244,7 @@ const ProfilePage: React.FC = () => {
         });
 
         const fileExt = optimizedImage.uri.split('.').pop();
-        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+        const fileName = `${profile.id}/${Date.now()}.${fileExt}`;
 
         // Create FormData for the image
         const formData = new FormData();
@@ -240,12 +255,12 @@ const ProfilePage: React.FC = () => {
         } as any);
 
         // Delete old profile picture if exists
-        if (user.profile_picture_url) {
-          const oldFileName = user.profile_picture_url.split('/').pop();
+        if (profile.profile_picture_url) {
+          const oldFileName = profile.profile_picture_url.split('/').pop();
           if (oldFileName) {
             await supabase.storage
               .from('profile-pictures')
-              .remove([`${user.id}/${oldFileName}`]);
+              .remove([`${profile.id}/${oldFileName}`]);
           }
         }
 
@@ -276,7 +291,7 @@ const ProfilePage: React.FC = () => {
             profile_picture_url: urlData.publicUrl,
             updated_at: new Date().toISOString()
           })
-          .eq('id', user.id);
+          .eq('id', profile.id);
 
         if (updateError) {
           console.error('Profile update error:', updateError);
@@ -284,7 +299,7 @@ const ProfilePage: React.FC = () => {
         }
 
         // Update local state
-        setUser(prev => prev ? {
+        setProfile(prev => prev ? {
           ...prev,
           profile_picture_url: urlData.publicUrl
         } : null);
@@ -356,7 +371,7 @@ const ProfilePage: React.FC = () => {
   const handleDeletePhoto = async (photoId: string) => {
     try {
       // Delete from Supabase storage first
-      const photoToDelete = posts.find(p => p.id === photoId);
+      const photoToDelete = photos.find(p => p.id === photoId);
       if (photoToDelete) {
         const fileName = photoToDelete.url.split('/').pop();
         if (fileName) {
@@ -375,7 +390,7 @@ const ProfilePage: React.FC = () => {
       if (error) throw error;
 
       // Update local state
-      setPosts(posts.filter(post => post.id !== photoId));
+      setPhotos(photos.filter(post => post.id !== photoId));
       setMenuVisible(null);
     } catch (err) {
       console.error('Error deleting photo:', err);
@@ -429,7 +444,7 @@ const ProfilePage: React.FC = () => {
     );
   }
 
-  if (!user) {
+  if (!profile) {
     return (
       <View style={styles.container}>
         <Text style={styles.text}>User not found</Text>
@@ -440,7 +455,7 @@ const ProfilePage: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.fixedHeader}>
-        <Text style={styles.headerUsername}>@{user?.username}</Text>
+        <Text style={styles.headerUsername}>@{profile?.username}</Text>
       </View>
 
       <AnimatedFlatList
@@ -463,15 +478,15 @@ const ProfilePage: React.FC = () => {
                   <View style={styles.profileImageContainer}>
                     <Image
                       source={{
-                        uri: user?.profile_picture_url || 'https://via.placeholder.com/80'
+                        uri: profile?.profile_picture_url || 'https://via.placeholder.com/80'
                       }}
                       style={styles.profileImage}
                     />
                   </View>
                   <View style={styles.userInfo}>
-                    <Text style={styles.name}>{user?.name}</Text>
-                    {user?.bio && (
-                      <Text style={styles.bio}>{user.bio}</Text>
+                    <Text style={styles.name}>{profile?.name}</Text>
+                    {profile?.bio && (
+                      <Text style={styles.bio}>{profile.bio}</Text>
                     )}
                   </View>
                 </View>
@@ -500,7 +515,7 @@ const ProfilePage: React.FC = () => {
           </>
         }
         ListEmptyComponent={
-          posts.length === 0 ? (
+          photos.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No posts yet</Text>
             </View>

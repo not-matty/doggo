@@ -1,6 +1,6 @@
 // app/features/auth/screens/LoginScreen.tsx
 
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,28 +13,33 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
-import { AuthContext } from '@context/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthStackParamList } from '@navigation/types';
 import { colors, spacing, typography, layout } from '@styles/theme';
 import Feather from 'react-native-vector-icons/Feather';
+import { useSignIn, useAuth } from '@clerk/clerk-expo';
+import { supabase } from '@services/supabase';
 
 type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 
 const LoginScreen: React.FC = () => {
-  const { signInWithPhone } = useContext(AuthContext);
+  const { signIn, isLoaded, setActive } = useSignIn();
+  const { userId } = useAuth();
   const navigation = useNavigation<LoginScreenNavigationProp>();
+
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('1');
+  const [loading, setLoading] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [code, setCode] = useState('');
 
   const formatPhoneNumber = (text: string) => {
-    // Remove all non-numeric characters
     const cleaned = text.replace(/\D/g, '');
     let formatted = cleaned;
 
-    // Format as (XXX) XXX-XXXX
     if (cleaned.length > 0) {
       if (cleaned.length <= 3) {
         formatted = `(${cleaned}`;
@@ -53,12 +58,13 @@ const LoginScreen: React.FC = () => {
   };
 
   const handleCountryCodeChange = (text: string) => {
-    // Remove non-numeric characters and limit to 4 digits
     const cleaned = text.replace(/\D/g, '');
     setCountryCode(cleaned.slice(0, 4));
   };
 
   const handleSignIn = async () => {
+    if (!isLoaded) return;
+
     const cleanedPhone = phone.replace(/\D/g, '');
     if (cleanedPhone.length < 10) {
       Alert.alert('Invalid Phone Number', 'Please enter a complete phone number.');
@@ -73,13 +79,155 @@ const LoginScreen: React.FC = () => {
     const fullPhoneNumber = `+${countryCode}${cleanedPhone}`;
 
     try {
-      await signInWithPhone(fullPhoneNumber);
-      navigation.navigate('VerifyOTP', { phone: fullPhoneNumber });
+      setLoading(true);
+
+      await signIn.create({
+        identifier: fullPhoneNumber,
+        strategy: "phone_code",
+      });
+
+      setPendingVerification(true);
     } catch (error: any) {
       console.error('Sign in error:', error);
-      Alert.alert('Sign In Error', 'Failed to send verification code. Please try again.');
+      Alert.alert(
+        'Sign In Error',
+        error.message || 'Failed to send verification code'
+      );
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handleVerify = async () => {
+    if (!code.trim()) {
+      Alert.alert('Invalid Code', 'Please enter the verification code.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Attempt to verify the code
+      const result = await signIn!.attemptFirstFactor({
+        strategy: "phone_code",
+        code
+      });
+
+      if (!result.createdSessionId) {
+        throw new Error('Failed to create session');
+      }
+
+      // Set the session active
+      await setActive!({ session: result.createdSessionId });
+
+      // Update the existing profile with the new Clerk ID
+      const cleanedPhone = phone.replace(/\D/g, '');
+      const fullPhoneNumber = `+${countryCode}${cleanedPhone}`;
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          clerk_id: userId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('phone', fullPhoneNumber);
+
+      if (updateError) {
+        console.error('Error updating profile:', updateError);
+        // Continue anyway as this isn't critical
+      }
+
+    } catch (error: any) {
+      console.error('Verification error:', error);
+      console.error('Verification error details:', error.errors?.[0] || error);
+      Alert.alert(
+        'Verification Failed',
+        error.errors?.[0]?.message || 'Failed to verify code. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderVerificationForm = () => (
+    <View style={styles.content}>
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>Verify Phone</Text>
+        <Text style={styles.subtitle}>Enter the code sent to {phone}</Text>
+      </View>
+
+      <View style={styles.inputContainer}>
+        <View style={styles.inputWrapper}>
+          <TextInput
+            placeholder="Enter verification code"
+            value={code}
+            onChangeText={setCode}
+            style={styles.input}
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="number-pad"
+            maxLength={6}
+            autoCapitalize="none"
+          />
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.loginButton, loading && styles.buttonDisabled]}
+        onPress={handleVerify}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.background} />
+        ) : (
+          <Text style={styles.loginButtonText}>Verify Phone</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderSignInForm = () => (
+    <View style={styles.content}>
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>Welcome Back</Text>
+        <Text style={styles.subtitle}>Enter your phone number to continue</Text>
+      </View>
+
+      <View style={styles.inputContainer}>
+        <View style={styles.phoneInputContainer}>
+          <Text style={styles.plus}>+</Text>
+          <TextInput
+            value={countryCode}
+            onChangeText={handleCountryCodeChange}
+            keyboardType="phone-pad"
+            style={styles.countryCode}
+            maxLength={4}
+            selectTextOnFocus
+          />
+          <TextInput
+            placeholder="(123) 456-7890"
+            value={phone}
+            onChangeText={handlePhoneChange}
+            keyboardType="phone-pad"
+            style={styles.phoneInput}
+            placeholderTextColor={colors.textSecondary}
+            maxLength={14}
+          />
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.loginButton, loading && styles.buttonDisabled]}
+        onPress={handleSignIn}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.background} />
+        ) : (
+          <Text style={styles.loginButtonText}>Continue</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -95,42 +243,7 @@ const LoginScreen: React.FC = () => {
             <Feather name="chevron-left" size={28} color={colors.primary} />
           </TouchableOpacity>
 
-          <View style={styles.content}>
-            <View style={styles.headerContainer}>
-              <Text style={styles.title}>Welcome Back</Text>
-              <Text style={styles.subtitle}>Enter your phone number to continue</Text>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <View style={styles.phoneInputContainer}>
-                <Text style={styles.plus}>+</Text>
-                <TextInput
-                  value={countryCode}
-                  onChangeText={handleCountryCodeChange}
-                  keyboardType="phone-pad"
-                  style={styles.countryCode}
-                  maxLength={4}
-                  selectTextOnFocus
-                />
-                <TextInput
-                  placeholder="(123) 456-7890"
-                  value={phone}
-                  onChangeText={handlePhoneChange}
-                  keyboardType="phone-pad"
-                  style={styles.phoneInput}
-                  placeholderTextColor={colors.textSecondary}
-                  maxLength={14} // (XXX) XXX-XXXX
-                />
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.loginButton}
-              onPress={handleSignIn}
-            >
-              <Text style={styles.loginButtonText}>Continue</Text>
-            </TouchableOpacity>
-          </View>
+          {pendingVerification ? renderVerificationForm() : renderSignInForm()}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </TouchableWithoutFeedback>
@@ -196,12 +309,25 @@ const styles = StyleSheet.create({
     color: colors.primary,
     paddingVertical: spacing.sm,
   },
+  inputWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    marginBottom: spacing.xl,
+  },
+  input: {
+    fontSize: 16,
+    color: colors.primary,
+    paddingVertical: spacing.sm,
+  },
   loginButton: {
     backgroundColor: colors.primary,
     paddingVertical: spacing.lg,
     borderRadius: layout.borderRadius.lg,
     alignItems: 'center',
     marginTop: spacing.xl,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   loginButtonText: {
     color: colors.background,

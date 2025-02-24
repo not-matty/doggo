@@ -17,8 +17,35 @@ import { User } from '@navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, typography } from '@styles/theme';
 
-interface Match extends User {
+interface Match {
+    id: string;
     matched_at: string;
+    user: {
+        id: string;
+        name: string;
+        username: string;
+        profile_picture_url?: string | null;
+        clerk_id: string;
+    };
+}
+
+type MatchWithProfiles = {
+    id: string;
+    matched_at: string;
+    user1: {
+        id: string;
+        name: string;
+        username: string;
+        profile_picture_url: string | null;
+        clerk_id: string;
+    };
+    user2: {
+        id: string;
+        name: string;
+        username: string;
+        profile_picture_url: string | null;
+        clerk_id: string;
+    };
 }
 
 const LikesScreen: React.FC = () => {
@@ -41,24 +68,24 @@ const LikesScreen: React.FC = () => {
                 .select(`
                     id,
                     matched_at,
-                    user1:user1_id (
+                    user1:profiles!user1_id (
                         id,
                         name,
                         username,
                         profile_picture_url,
-                        created_at,
-                        updated_at
+                        clerk_id
                     ),
-                    user2:user2_id (
+                    user2:profiles!user2_id (
                         id,
                         name,
                         username,
                         profile_picture_url,
-                        created_at,
-                        updated_at
+                        clerk_id
                     )
                 `)
-                .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+                .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+                .order('matched_at', { ascending: false })
+                .returns<MatchWithProfiles[]>();
 
             if (matchesError) throw matchesError;
 
@@ -66,8 +93,15 @@ const LikesScreen: React.FC = () => {
             const transformedMatches = (matchesData || []).map(match => {
                 const matchedUser = match.user1.id === user.id ? match.user2 : match.user1;
                 return {
-                    ...matchedUser,
-                    matched_at: match.matched_at
+                    id: match.id,
+                    matched_at: match.matched_at,
+                    user: {
+                        id: matchedUser.id,
+                        name: matchedUser.name,
+                        username: matchedUser.username,
+                        profile_picture_url: matchedUser.profile_picture_url || null,
+                        clerk_id: matchedUser.clerk_id
+                    }
                 };
             });
 

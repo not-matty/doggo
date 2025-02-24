@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import RootNavigator from '@navigation/RootNavigator';
-import { AuthProvider } from '@context/AuthContext';
+import { ClerkProvider } from '@context/ClerkProvider';
 import * as ImagePicker from 'expo-image-picker';
 import * as Contacts from 'expo-contacts';
 import { Alert, Platform } from 'react-native';
@@ -56,11 +56,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <AuthProvider>
+    <ClerkProvider>
       <NavigationContainer ref={navigationRef}>
         <RootNavigator />
       </NavigationContainer>
-    </AuthProvider>
+    </ClerkProvider>
   );
 };
 

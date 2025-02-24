@@ -39,13 +39,30 @@ const SEARCH_BAR_HEIGHT = 70;
 interface Post {
   id: string;
   url: string;
-  user_id: string;
+  caption?: string;
   created_at: string;
+  user_id: string;
   user: {
     id: string;
     name: string;
     username: string;
-    profile_picture_url?: string;
+    profile_picture_url?: string | null;
+    clerk_id: string;
+  };
+}
+
+type PhotoWithProfile = {
+  id: string;
+  url: string;
+  caption?: string;
+  created_at: string;
+  user_id: string;
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    profile_picture_url: string | null;
+    clerk_id: string;
   };
 }
 
@@ -95,32 +112,8 @@ const SearchPage: React.FC = () => {
 
   const fetchExplorePosts = async () => {
     try {
-      if (!user?.id) return;
-
-      // Step 1: Get immediate contacts
-      const { data: immediateContacts, error: contactsError } = await supabase
-        .from('contacts')
-        .select('contact_user_id')
-        .eq('user_id', user.id);
-
-      if (contactsError) throw contactsError;
-
-      const immediateContactIds = immediateContacts.map(contact => contact.contact_user_id);
-
-      // Step 2: Get contacts of contacts
-      const { data: contactsOfContacts, error: cocError } = await supabase
-        .from('contacts')
-        .select('contact_user_id')
-        .in('user_id', immediateContactIds)
-        .neq('contact_user_id', user.id)
-        .not('contact_user_id', 'in', `(${immediateContactIds.join(',')})`);
-
-      if (cocError) throw cocError;
-
-      const contactsOfContactIds = [...new Set(contactsOfContacts.map(c => c.contact_user_id))];
-
-      // Step 3: Get photos from contacts of contacts
-      const { data: photos, error: photosError } = await supabase
+      setLoading(true);
+      const { data, error } = await supabase
         .from('photos')
         .select(`
           id,
@@ -128,20 +121,37 @@ const SearchPage: React.FC = () => {
           caption,
           created_at,
           user_id,
-          user:profiles (
+          user:profiles!user_id (
             id,
             name,
             username,
-            profile_picture_url
+            profile_picture_url,
+            clerk_id
           )
         `)
-        .in('user_id', contactsOfContactIds)
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(20)
+        .returns<PhotoWithProfile[]>();
 
-      if (photosError) throw photosError;
+      if (error) throw error;
 
-      setExplorePosts(photos as unknown as Post[]);
+      // Ensure we have valid URLs for all posts
+      const postsWithValidUrls = (data || []).map(post => ({
+        id: post.id,
+        url: post.url || '',
+        caption: post.caption,
+        created_at: post.created_at,
+        user_id: post.user_id,
+        user: {
+          id: post.user.id,
+          name: post.user.name,
+          username: post.user.username,
+          profile_picture_url: post.user.profile_picture_url || null,
+          clerk_id: post.user.clerk_id
+        }
+      }));
+
+      setExplorePosts(postsWithValidUrls);
     } catch (error: any) {
       console.error('Error fetching explore posts:', error);
       Alert.alert('Error', 'Failed to fetch explore posts');
