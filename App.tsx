@@ -4,9 +4,10 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import RootNavigator from '@navigation/RootNavigator';
 import { ClerkProvider } from '@context/ClerkProvider';
+import { AppProvider } from '@context/AppContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as Contacts from 'expo-contacts';
-import { Alert, Platform } from 'react-native';
+import { Alert } from 'react-native';
 import { navigationRef } from '@navigation/RootNavigation';
 
 const App: React.FC = () => {
@@ -16,8 +17,14 @@ const App: React.FC = () => {
 
   const requestPermissions = async () => {
     try {
-      // Request photo library permission
-      const libraryResponse = await ImagePicker.requestMediaLibraryPermissionsAsync(true); // true for requesting "all photos" access
+      // Request permissions in parallel
+      const [libraryResponse, cameraResponse, contactsResponse] = await Promise.all([
+        ImagePicker.requestMediaLibraryPermissionsAsync(true),
+        ImagePicker.requestCameraPermissionsAsync(),
+        Contacts.requestPermissionsAsync()
+      ]);
+
+      // Handle library permissions
       if (!libraryResponse.granted) {
         Alert.alert(
           'Photo Access Required',
@@ -26,8 +33,7 @@ const App: React.FC = () => {
         );
       }
 
-      // Request camera permission
-      const cameraResponse = await ImagePicker.requestCameraPermissionsAsync();
+      // Handle camera permissions
       if (!cameraResponse.granted) {
         Alert.alert(
           'Camera Access Required',
@@ -36,19 +42,13 @@ const App: React.FC = () => {
         );
       }
 
-      // Request contacts permission
-      const contactsResponse = await Contacts.requestPermissionsAsync();
+      // Handle contacts permissions
       if (!contactsResponse.granted) {
         Alert.alert(
           'Contacts Access Required',
           'This app needs access to your contacts to help you connect with friends. Please enable it in your settings.',
           [{ text: 'OK' }]
         );
-      }
-
-      // For iOS, we also need to request photo library access with "addOnly" permission
-      if (Platform.OS === 'ios') {
-        await ImagePicker.requestMediaLibraryPermissionsAsync(false); // false for "addOnly" access
       }
     } catch (error) {
       console.error('Error requesting permissions:', error);
@@ -57,9 +57,11 @@ const App: React.FC = () => {
 
   return (
     <ClerkProvider>
-      <NavigationContainer ref={navigationRef}>
-        <RootNavigator />
-      </NavigationContainer>
+      <AppProvider>
+        <NavigationContainer ref={navigationRef}>
+          <RootNavigator />
+        </NavigationContainer>
+      </AppProvider>
     </ClerkProvider>
   );
 };

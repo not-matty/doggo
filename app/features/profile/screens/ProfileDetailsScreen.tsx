@@ -17,6 +17,7 @@ import {
   StatusBar,
   SafeAreaView,
   RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { ProfileStackParamList, User, Post } from '@navigation/types';
@@ -27,6 +28,9 @@ import PhotoViewer from '@components/common/PhotoViewer';
 import { Feather } from '@expo/vector-icons';
 import api from '@services/api';
 import * as Contacts from 'expo-contacts';
+import { useApp } from '@context/AppContext';
+import PhotoGrid from '@components/common/PhotoGrid';
+import ProfileHeader from '@components/profile/ProfileHeader';
 
 type ProfileDetailsRouteProp = RouteProp<ProfileStackParamList, 'ProfileDetails'>;
 
@@ -45,6 +49,7 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Post>);
 
 const DEFAULT_PLACEHOLDER_USER: User = {
   id: 'placeholder',
+  clerk_id: 'placeholder',
   name: '',  // Will be filled in with actual name
   username: '',
   profile_picture_url: require('@assets/images/Default_pfp.svg.png'),
@@ -57,6 +62,8 @@ const DEFAULT_PLACEHOLDER_USER: User = {
 
 const ProfileDetailsScreen: React.FC = () => {
   const route = useRoute<ProfileDetailsRouteProp>();
+  const { userId } = route.params;
+  const { state: { profile: currentUserProfile } } = useApp();
   const { user: authUser } = useContext(AuthContext);
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState<string>('');
@@ -70,6 +77,7 @@ const ProfileDetailsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [leftColumn, setLeftColumn] = useState<Post[]>([]);
   const [rightColumn, setRightColumn] = useState<Post[]>([]);
+  const [isLiked, setIsLiked] = useState(false);
 
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, TOTAL_HEADER_HEIGHT],
@@ -90,8 +98,9 @@ const ProfileDetailsScreen: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchUserAndPosts();
-  }, [route.params?.userId]);
+    fetchProfile();
+    checkIfLiked();
+  }, [userId]);
 
   useEffect(() => {
     // Pre-calculate image heights
@@ -156,7 +165,7 @@ const ProfileDetailsScreen: React.FC = () => {
     }
   };
 
-  const fetchUserAndPosts = async () => {
+  const fetchProfile = async () => {
     try {
       setIsLoading(true);
 
@@ -164,7 +173,7 @@ const ProfileDetailsScreen: React.FC = () => {
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', route.params.userId)
+        .eq('id', userId)
         .single();
 
       if (userError) {
@@ -173,7 +182,7 @@ const ProfileDetailsScreen: React.FC = () => {
         const { data: unregisteredData, error: unregisteredError } = await supabase
           .from('unregistered_contacts')
           .select('name, phone')
-          .eq('id', route.params.userId)
+          .eq('id', userId)
           .single();
 
         if (unregisteredError) {
@@ -204,7 +213,7 @@ const ProfileDetailsScreen: React.FC = () => {
       const { data: photosData, error: photosError } = await supabase
         .from('photos')
         .select('*')
-        .eq('user_id', route.params.userId)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (photosError) throw photosError;
@@ -224,6 +233,56 @@ const ProfileDetailsScreen: React.FC = () => {
       Alert.alert('Error', 'Failed to load profile data');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const checkIfLiked = async () => {
+    try {
+      if (!currentUserProfile?.id) return;
+
+      const { data, error } = await supabase
+        .from('likes')
+        .select('*')
+        .eq('liker_id', currentUserProfile.id)
+        .eq('liked_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      setIsLiked(!!data);
+    } catch (error) {
+      console.error('Error checking like status:', error);
+    }
+  };
+
+  const handleLike = async () => {
+    try {
+      if (!currentUserProfile?.id) return;
+
+      if (isLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('liker_id', currentUserProfile.id)
+          .eq('liked_id', userId);
+
+        if (error) throw error;
+        setIsLiked(false);
+      } else {
+        // Like
+        const { error } = await supabase
+          .from('likes')
+          .insert({
+            liker_id: currentUserProfile.id,
+            liked_id: userId,
+          });
+
+        if (error) throw error;
+        setIsLiked(true);
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      Alert.alert('Error', 'Failed to update like status');
     }
   };
 
@@ -369,7 +428,7 @@ const ProfileDetailsScreen: React.FC = () => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchUserAndPosts();
+    await Promise.all([fetchProfile(), checkIfLiked()]);
     setRefreshing(false);
   };
 
@@ -469,7 +528,7 @@ const ProfileDetailsScreen: React.FC = () => {
               styles.likeButton,
               user.is_placeholder && { backgroundColor: colors.accent }
             ]}
-            onPress={user.is_placeholder ? handleLikeUnregistered : handleLikeUser}
+            onPress={user.is_placeholder ? handleLikeUnregistered : handleLike}
           >
             <Text style={[
               styles.likeButtonText,
@@ -503,7 +562,7 @@ const ProfileDetailsScreen: React.FC = () => {
 
       <AnimatedFlatList
         data={posts}
-        renderItem={renderPost}
+        renderItem={({ item, index }) => renderColumn([item], index % 2 === 1)}
         keyExtractor={(item) => item.id}
         numColumns={2}
         contentContainerStyle={styles.contentContainer}
@@ -541,7 +600,7 @@ const ProfileDetailsScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -716,14 +775,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.background,
   },
   loadingIndicator: {
     marginTop: spacing.xl,
   },
   errorText: {
-    color: colors.textPrimary,
+    color: colors.error,
     fontSize: typography.body.fontSize,
-    textAlign: 'center',
-    marginTop: spacing.xl,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -12,58 +12,23 @@ import {
     ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { AuthContext } from '@context/AuthContext';
-import { supabase } from '@services/supabase';
+import { useApp } from '@context/AppContext';
 import { colors, spacing, typography, layout } from '@styles/theme';
-import { User } from '@navigation/types';
+import { supabase } from '@services/supabase';
 
 const MAX_BIO_LENGTH = 150;
 
 const EditProfileScreen: React.FC = () => {
     const navigation = useNavigation();
-    const { user: authUser } = useContext(AuthContext);
-    const [loading, setLoading] = useState(true);
+    const { state: { profile }, updateProfile } = useApp();
     const [saving, setSaving] = useState(false);
-    const [bio, setBio] = useState('');
-    const [name, setName] = useState('');
-    const [username, setUsername] = useState('');
-
-    useEffect(() => {
-        fetchUserProfile();
-    }, []);
-
-    const fetchUserProfile = async () => {
-        try {
-            if (!authUser?.id) return;
-
-            const { data: userData, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', authUser.id)
-                .single();
-
-            if (error) throw error;
-
-            if (userData) {
-                setBio(userData.bio || '');
-                setName(userData.name || '');
-                setUsername(userData.username || '');
-            }
-        } catch (error) {
-            console.error('Error fetching profile:', error);
-            Alert.alert('Error', 'Failed to load profile data');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const [bio, setBio] = useState(profile?.bio || '');
+    const [name, setName] = useState(profile?.name || '');
+    const [username, setUsername] = useState(profile?.username || '');
 
     const handleSave = async () => {
         try {
             setSaving(true);
-
-            if (!authUser?.id) {
-                throw new Error('No authenticated user');
-            }
 
             // Validate username
             if (username.length < 3) {
@@ -72,31 +37,25 @@ const EditProfileScreen: React.FC = () => {
             }
 
             // Check if username is taken (only if username changed)
-            const { data: existingUser, error: checkError } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('username', username.toLowerCase())
-                .neq('id', authUser.id)
-                .single();
+            if (username !== profile?.username) {
+                const { data: existingUser, error: checkError } = await supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('username', username.toLowerCase())
+                    .neq('id', profile?.id)
+                    .single();
 
-            if (existingUser) {
-                Alert.alert('Username Taken', 'Please choose a different username');
-                return;
+                if (existingUser) {
+                    Alert.alert('Username Taken', 'Please choose a different username');
+                    return;
+                }
             }
 
-            const updates = {
+            await updateProfile({
                 bio,
                 name,
                 username: username.toLowerCase(),
-                updated_at: new Date().toISOString(),
-            };
-
-            const { error } = await supabase
-                .from('profiles')
-                .update(updates)
-                .eq('id', authUser.id);
-
-            if (error) throw error;
+            });
 
             Alert.alert('Success', 'Profile updated successfully');
             navigation.goBack();
@@ -108,7 +67,7 @@ const EditProfileScreen: React.FC = () => {
         }
     };
 
-    if (loading) {
+    if (!profile) {
         return (
             <View style={styles.container}>
                 <ActivityIndicator size="large" color={colors.primary} />
@@ -174,10 +133,7 @@ const EditProfileScreen: React.FC = () => {
                 </View>
 
                 <TouchableOpacity
-                    style={[
-                        styles.saveButton,
-                        saving && styles.saveButtonDisabled
-                    ]}
+                    style={[styles.saveButton, saving && styles.saveButtonDisabled]}
                     onPress={handleSave}
                     disabled={saving}
                 >

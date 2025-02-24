@@ -1,30 +1,14 @@
-import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import React, { ReactNode, useEffect } from 'react';
 import { ClerkProvider as BaseClerkProvider, useAuth } from '@clerk/clerk-expo';
 import * as SecureStore from 'expo-secure-store';
-import { Platform, ActivityIndicator, View, Text } from 'react-native';
+import { Platform } from 'react-native';
 import { TokenCache } from '@clerk/clerk-expo/dist/cache';
-import { updateSupabaseAuthToken, supabase } from '@services/supabase';
-import { colors } from '@styles/theme';
+import { updateSupabaseAuthToken } from '@services/supabase';
 
-const createTokenCache = (): TokenCache => {
-    return {
-        getToken: async (key: string) => {
-            try {
-                return await SecureStore.getItemAsync(key);
-            } catch (error) {
-                console.error('SecureStore getToken error:', error);
-                return null;
-            }
-        },
-        saveToken: async (key: string, token: string) => {
-            try {
-                await SecureStore.setItemAsync(key, token);
-            } catch (error) {
-                console.error('SecureStore saveToken error:', error);
-            }
-        },
-    };
-};
+const createTokenCache = (): TokenCache => ({
+    getToken: (key: string) => SecureStore.getItemAsync(key),
+    saveToken: (key: string, token: string) => SecureStore.setItemAsync(key, token),
+});
 
 // SecureStore is not supported on web
 const tokenCache = Platform.OS !== 'web' ? createTokenCache() : undefined;
@@ -37,52 +21,33 @@ if (!publishableKey) {
 
 // Component to handle Supabase auth token updates
 function SupabaseAuthHandler({ children }: { children: ReactNode }) {
-    const { getToken, isLoaded, isSignedIn } = useAuth();
-    const lastSignedInState = useRef<boolean | null>(null);
-    const lastAuthState = useRef({ isLoaded, isSignedIn });
+    const { getToken, isSignedIn } = useAuth();
 
     useEffect(() => {
         let isMounted = true;
 
         const syncSupabaseAuth = async () => {
             try {
-                if (!isLoaded) return;
-
-                // Only clear session if we were previously signed in and now we're not
-                if (!isSignedIn && lastSignedInState.current === true) {
+                if (!isSignedIn) {
                     await updateSupabaseAuthToken(null);
-                    lastSignedInState.current = false;
                     return;
                 }
 
-                // Update token if signed in
-                if (isSignedIn) {
-                    const token = await getToken({ template: 'supabase' });
-                    if (token && isMounted) {
-                        await updateSupabaseAuthToken(token);
-                        lastSignedInState.current = true;
-                    }
+                const token = await getToken({ template: 'supabase' });
+                if (token && isMounted) {
+                    await updateSupabaseAuthToken(token);
                 }
             } catch (error) {
                 console.error('Error syncing Supabase auth:', error);
             }
         };
 
-        // Only sync if auth state changed
-        if (lastAuthState.current.isLoaded !== isLoaded ||
-            lastAuthState.current.isSignedIn !== isSignedIn) {
-            syncSupabaseAuth();
-            lastAuthState.current = { isLoaded, isSignedIn };
-        }
-
-        // Set up periodic sync
-        const intervalId = setInterval(syncSupabaseAuth, 60000); // Sync every minute
+        syncSupabaseAuth();
 
         return () => {
             isMounted = false;
-            clearInterval(intervalId);
         };
-    }, [getToken, isLoaded, isSignedIn]);
+    }, [getToken, isSignedIn]);
 
     return <>{children}</>;
 }

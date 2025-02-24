@@ -7,9 +7,9 @@ import MainNavigator from '@navigation/MainNavigator';
 import { RootStackParamList } from '@navigation/types';
 import GlobalLayout from '@layouts/GlobalLayout';
 import { useAuth } from '@clerk/clerk-expo';
+import { useApp } from '@context/AppContext';
 import { View, ActivityIndicator, Text } from 'react-native';
 import { colors } from '@styles/theme';
-import { SignedIn, SignedOut } from '@components/auth/AuthGuard';
 
 const RootStack = createStackNavigator<RootStackParamList>();
 
@@ -21,7 +21,13 @@ const LoadingScreen = () => (
 );
 
 const RootNavigator: React.FC = () => {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
+  const { state: { isLoadingProfile } } = useApp();
+
+  // Show loading screen while Clerk is initializing or we're loading the profile
+  if (!isLoaded || (isSignedIn && isLoadingProfile)) {
+    return <LoadingScreen />;
+  }
 
   return (
     <GlobalLayout>
