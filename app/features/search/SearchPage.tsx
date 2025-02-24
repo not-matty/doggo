@@ -297,11 +297,16 @@ const SearchPage: React.FC = () => {
 
   const handleLikeUser = async (userId: string, name: string) => {
     try {
+      if (!user?.clerk_id) {
+        Alert.alert('Error', 'You must be logged in to like users.');
+        return;
+      }
+
       // Check if already liked
       const { data: existingLike, error: checkError } = await supabase
         .from('likes')
         .select('id')
-        .eq('liker_id', user?.id)
+        .eq('liker_id', user.clerk_id)
         .eq('liked_id', userId)
         .single();
 
@@ -316,7 +321,7 @@ const SearchPage: React.FC = () => {
       const { error: likeError } = await supabase
         .from('likes')
         .insert([{
-          liker_id: user?.id,
+          liker_id: user.clerk_id,
           liked_id: userId
         }]);
 
@@ -327,7 +332,7 @@ const SearchPage: React.FC = () => {
         .from('likes')
         .select('id')
         .eq('liker_id', userId)
-        .eq('liked_id', user?.id)
+        .eq('liked_id', user.clerk_id)
         .single();
 
       if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
@@ -337,7 +342,7 @@ const SearchPage: React.FC = () => {
         const { error: matchError } = await supabase
           .from('matches')
           .insert([{
-            user1_id: user?.id,
+            user1_id: user.id,
             user2_id: userId
           }]);
 
@@ -348,14 +353,14 @@ const SearchPage: React.FC = () => {
           .from('notifications')
           .insert([
             {
-              user_id: user?.id,
+              user_id: user.id,
               type: 'match',
               data: { matched_user_id: userId }
             },
             {
               user_id: userId,
               type: 'match',
-              data: { matched_user_id: user?.id }
+              data: { matched_user_id: user.id }
             }
           ]);
 
@@ -367,7 +372,7 @@ const SearchPage: React.FC = () => {
           .insert([{
             user_id: userId,
             type: 'like',
-            data: { liker_id: user?.id }
+            data: { liker_id: user.clerk_id }
           }]);
 
         Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');

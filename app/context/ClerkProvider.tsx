@@ -1,9 +1,10 @@
-import React, { ReactNode, useEffect, useRef } from 'react';
+import React, { ReactNode, useEffect, useRef, useState } from 'react';
 import { ClerkProvider as BaseClerkProvider, useAuth } from '@clerk/clerk-expo';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import { Platform, ActivityIndicator, View, Text } from 'react-native';
 import { TokenCache } from '@clerk/clerk-expo/dist/cache';
-import { updateSupabaseAuthToken } from '@services/supabase';
+import { updateSupabaseAuthToken, supabase } from '@services/supabase';
+import { colors } from '@styles/theme';
 
 const createTokenCache = (): TokenCache => {
     return {
@@ -12,7 +13,6 @@ const createTokenCache = (): TokenCache => {
                 return await SecureStore.getItemAsync(key);
             } catch (error) {
                 console.error('SecureStore getToken error:', error);
-                await SecureStore.deleteItemAsync(key);
                 return null;
             }
         },
@@ -21,12 +21,6 @@ const createTokenCache = (): TokenCache => {
                 await SecureStore.setItemAsync(key, token);
             } catch (error) {
                 console.error('SecureStore saveToken error:', error);
-                // Attempt to clean up on error
-                try {
-                    await SecureStore.deleteItemAsync(key);
-                } catch (cleanupError) {
-                    console.error('Failed to cleanup after token save error:', cleanupError);
-                }
             }
         },
     };
@@ -44,49 +38,41 @@ if (!publishableKey) {
 // Component to handle Supabase auth token updates
 function SupabaseAuthHandler({ children }: { children: ReactNode }) {
     const { getToken, isLoaded, isSignedIn } = useAuth();
-    const initialSyncDone = useRef(false);
-    const syncTimeoutRef = useRef<NodeJS.Timeout>();
+    const lastSignedInState = useRef<boolean | null>(null);
+    const lastAuthState = useRef({ isLoaded, isSignedIn });
 
     useEffect(() => {
         let isMounted = true;
 
         const syncSupabaseAuth = async () => {
             try {
-                if (!isLoaded) {
-                    console.log('Clerk not loaded yet, waiting...');
-                    return;
-                }
+                if (!isLoaded) return;
 
-                // Clear Supabase session if user is not signed in
-                if (!isSignedIn) {
-                    console.log('User not signed in, clearing Supabase session');
+                // Only clear session if we were previously signed in and now we're not
+                if (!isSignedIn && lastSignedInState.current === true) {
                     await updateSupabaseAuthToken(null);
+                    lastSignedInState.current = false;
                     return;
                 }
 
-                // Get the JWT token from Clerk
-                const token = await getToken({ template: 'supabase' });
-                console.log('Got token from Clerk:', token ? 'yes' : 'no');
-
-                if (token && isMounted) {
-                    // Update the Supabase client with the new token
-                    const session = await updateSupabaseAuthToken(token);
-                    console.log('Updated Supabase session:', session ? 'yes' : 'no');
+                // Update token if signed in
+                if (isSignedIn) {
+                    const token = await getToken({ template: 'supabase' });
+                    if (token && isMounted) {
+                        await updateSupabaseAuthToken(token);
+                        lastSignedInState.current = true;
+                    }
                 }
             } catch (error) {
                 console.error('Error syncing Supabase auth:', error);
-                // If there's an error, try again in 5 seconds
-                if (isMounted) {
-                    syncTimeoutRef.current = setTimeout(syncSupabaseAuth, 5000);
-                }
-            } finally {
-                initialSyncDone.current = true;
             }
         };
 
-        // Initial sync
-        if (!initialSyncDone.current) {
+        // Only sync if auth state changed
+        if (lastAuthState.current.isLoaded !== isLoaded ||
+            lastAuthState.current.isSignedIn !== isSignedIn) {
             syncSupabaseAuth();
+            lastAuthState.current = { isLoaded, isSignedIn };
         }
 
         // Set up periodic sync
@@ -94,12 +80,7 @@ function SupabaseAuthHandler({ children }: { children: ReactNode }) {
 
         return () => {
             isMounted = false;
-            if (syncTimeoutRef.current) {
-                clearTimeout(syncTimeoutRef.current);
-            }
             clearInterval(intervalId);
-            // Clear Supabase session on unmount
-            updateSupabaseAuthToken(null).catch(console.error);
         };
     }, [getToken, isLoaded, isSignedIn]);
 

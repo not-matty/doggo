@@ -7,6 +7,9 @@ import { supabase } from '@services/supabase';
 import { User } from '@navigation/types';
 import { navigate } from '@navigation/RootNavigation'; // Global navigation helper
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '@navigation/types';
 
 // Define the shape of our AuthContext
 type AuthContextType = {
@@ -53,9 +56,12 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+type RootNavigationProp = StackNavigationProp<RootStackParamList>;
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigation = useNavigation<RootNavigationProp>();
 
   // --------------------------
   // Helper: Normalize Phone Number
@@ -319,7 +325,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.error('Error fetching profile for user ID:', session.user.id, error);
           setUser(null);
           // Navigate to CompleteProfile (since profile isn't complete)
-          navigate('CompleteProfile');
+          navigation.navigate('AuthNavigator', { screen: 'CompleteProfile' });
         } else {
           const fetchedUser = data as User;
           setUser(fetchedUser);
@@ -336,7 +342,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [navigation]);
 
   useEffect(() => {
     checkUser();

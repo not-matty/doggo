@@ -1,12 +1,16 @@
 // app/navigation/RootNavigation.tsx
 
-import { createNavigationContainerRef } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainerRefWithCurrent } from '@react-navigation/native';
+import { RootStackParamList } from './types';
 
-export const navigationRef = createNavigationContainerRef();
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
-export function navigate(name: string, params?: object) {
+export function navigate<T extends keyof RootStackParamList>(
+  screen: T,
+  params?: RootStackParamList[T] extends undefined ? never : RootStackParamList[T]
+) {
   if (navigationRef.isReady()) {
-    navigationRef.navigate(name, params);
+    navigationRef.navigate(screen as any, params as any);
   } else {
     console.warn('Navigation is not ready');
   }

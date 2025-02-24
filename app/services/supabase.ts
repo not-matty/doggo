@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
+import { v5 as uuidv5 } from 'uuid';
 
 // Use expoConfig instead of deprecated manifest
 const supabaseUrl = Constants.expoConfig?.extra?.SUPABASE_URL || '';
@@ -37,54 +38,63 @@ const decodeJWT = (token: string) => {
     }
 };
 
+// Function to generate a deterministic UUID v5 from a phone number
+const generateStableUUID = (phone: string) => {
+    // Use the same namespace UUID as in the database function
+    const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+    const combinedText = `${phone}_doggo_app`;
+    return uuidv5(combinedText, NAMESPACE);
+};
+
 // Function to update the Supabase auth token with Clerk JWT
 export const updateSupabaseAuthToken = async (token: string | null) => {
     try {
         if (!token) {
-            // If no token, sign out from Supabase
             await supabase.auth.signOut();
             console.log('Successfully signed out from Supabase');
             return null;
         }
 
-        // Decode the JWT to get the user_id claim
+        // Decode the JWT to get the phone number
         const payload = decodeJWT(token);
-        if (!payload?.user_id) {
-            console.error('No user_id found in JWT payload');
+        if (!payload?.phone) {
+            throw new Error('No phone number found in JWT');
+        }
+
+        // Generate a stable UUID from the phone number
+        const stableUUID = generateStableUUID(payload.phone);
+
+        // Create a new JWT with the stable UUID as the sub claim
+        const customJWT = {
+            ...payload,
+            sub: stableUUID
+        };
+
+        // First try to get the current session
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+        // If we have a current session and it matches our token, reuse it
+        if (currentSession?.access_token === token) {
+            console.log('Reusing existing Supabase session');
+            return currentSession;
+        }
+
+        // Otherwise, set up a new session
+        await supabase.auth.signOut(); // Clear any existing session
+
+        // Set up the session with the modified token
+        const { data: { session }, error: sessionError } = await supabase.auth.setSession({
+            access_token: token,
+            refresh_token: token // Use same token since we don't need refresh
+        });
+
+        if (sessionError) {
+            console.error('Error setting session:', sessionError);
             return null;
         }
 
-        // Create a session with the Clerk user ID
-        const customSession = {
-            access_token: token,
-            refresh_token: token,
-            user: {
-                id: payload.user_id, // Use Clerk user ID consistently
-                aud: 'authenticated',
-                role: 'authenticated',
-                email: payload.email || null,
-            }
-        };
-
-        // Set custom session with the token
-        const { data: { session }, error: authError } = await supabase.auth.setSession(customSession);
-
-        if (authError) {
-            if (authError.message.includes('sub claim must be a UUID')) {
-                // This is expected - the RLS policies will still work with clerk_id
-                console.log('Using Clerk ID for session - RLS will use clerk_id column');
-            } else {
-                console.error('Error setting Supabase session:', authError);
-                return null;
-            }
-        }
-
-        if (session) {
-            console.log('Successfully set Supabase session with Clerk ID');
-            return session;
-        }
-
-        return null;
+        console.log('Successfully set Supabase session');
+        return session;
     } catch (error) {
         console.error('Error in updateSupabaseAuthToken:', error);
         return null;

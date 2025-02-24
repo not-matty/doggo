@@ -236,14 +236,14 @@ export const HomeScreen: React.FC = () => {
 
   const handleLike = async (post: Post) => {
     try {
-      if (!user?.id) return;
+      if (!user?.clerk_id) return;
 
       const { error: likeError } = await supabase
         .from('likes')
         .insert([
           {
-            liker_id: user.id,
-            liked_id: post.user_id,
+            liker_id: user.clerk_id,
+            liked_id: post.user.clerk_id,
             created_at: new Date().toISOString()
           }
         ]);

@@ -4,7 +4,7 @@
  * Root-level stack for switching between Auth flows vs. main app flows. 
  */
 export type RootStackParamList = {
-  AuthNavigator: undefined;
+  AuthNavigator: { screen: keyof AuthStackParamList } | undefined;
   MainNavigator: undefined;
   TabsNavigator: undefined;
   HomeNavigator: undefined;
@@ -111,4 +111,5 @@ export type User = {
   created_at: string;
   updated_at: string;
   is_placeholder?: boolean;
+  clerk_id: string;
 };

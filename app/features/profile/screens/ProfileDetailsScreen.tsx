@@ -235,8 +235,8 @@ const ProfileDetailsScreen: React.FC = () => {
       const { data: existingLike, error: checkError } = await supabase
         .from('likes')
         .select('id')
-        .eq('liker_id', authUser.id)
-        .eq('liked_id', user.id)
+        .eq('liker_id', authUser.clerk_id)
+        .eq('liked_id', user.clerk_id)
         .single();
 
       if (checkError && checkError.code !== 'PGRST116') throw checkError;
@@ -250,8 +250,8 @@ const ProfileDetailsScreen: React.FC = () => {
       const { error: likeError } = await supabase
         .from('likes')
         .insert([{
-          liker_id: authUser.id,
-          liked_id: user.id
+          liker_id: authUser.clerk_id,
+          liked_id: user.clerk_id
         }]);
 
       if (likeError) throw likeError;
@@ -260,8 +260,8 @@ const ProfileDetailsScreen: React.FC = () => {
       const { data: mutualLike, error: mutualCheckError } = await supabase
         .from('likes')
         .select('id')
-        .eq('liker_id', user.id)
-        .eq('liked_id', authUser.id)
+        .eq('liker_id', user.clerk_id)
+        .eq('liked_id', authUser.clerk_id)
         .single();
 
       if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
@@ -301,7 +301,7 @@ const ProfileDetailsScreen: React.FC = () => {
           .insert([{
             user_id: user.id,
             type: 'like',
-            data: { liker_id: authUser.id }
+            data: { liker_id: authUser.clerk_id }
           }]);
 
         Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');

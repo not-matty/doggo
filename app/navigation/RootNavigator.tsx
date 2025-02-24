@@ -21,31 +21,16 @@ const LoadingScreen = () => (
 );
 
 const RootNavigator: React.FC = () => {
-  const { isLoaded, isSignedIn } = useAuth();
-
-  console.log('RootNavigator - isLoaded:', isLoaded, 'isSignedIn:', isSignedIn);
-
-  if (!isLoaded) {
-    return <LoadingScreen />;
-  }
+  const { isSignedIn } = useAuth();
 
   return (
     <GlobalLayout>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        <RootStack.Screen name="AuthNavigator">
-          {() => (
-            <SignedOut fallback={<MainNavigator />}>
-              <AuthNavigator />
-            </SignedOut>
-          )}
-        </RootStack.Screen>
-        <RootStack.Screen name="MainNavigator">
-          {() => (
-            <SignedIn fallback={<AuthNavigator />}>
-              <MainNavigator />
-            </SignedIn>
-          )}
-        </RootStack.Screen>
+        {isSignedIn ? (
+          <RootStack.Screen name="MainNavigator" component={MainNavigator} />
+        ) : (
+          <RootStack.Screen name="AuthNavigator" component={AuthNavigator} />
+        )}
       </RootStack.Navigator>
     </GlobalLayout>
   );
