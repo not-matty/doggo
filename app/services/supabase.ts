@@ -2,6 +2,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
+import { jwtDecode } from 'jwt-decode';
+import { v5 as uuidv5 } from 'uuid';
 
 // Use expoConfig instead of deprecated manifest
 const supabaseUrl = Constants.expoConfig?.extra?.SUPABASE_URL || '';
@@ -17,31 +19,48 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 // Function to update the Supabase auth token
-export const updateSupabaseAuthToken = async (token: string | null) => {
-    if (!token) {
-        await supabase.auth.signOut();
-        return null;
-    }
-
+export const updateSupabaseAuthToken = async (token: string | null): Promise<void> => {
     try {
-        const { data: { session }, error } = await supabase.auth.setSession({
+        if (!token) {
+            // Handle logout
+            await supabase.auth.signOut();
+            return;
+        }
+
+        // Decode the JWT to get the payload
+        const decoded: any = jwtDecode(token);
+
+        // Get the Clerk user ID
+        const clerkUserId = decoded.user_id || decoded.sub;
+
+        if (!clerkUserId) {
+            throw new Error('No user ID found in token');
+        }
+
+        // Generate a deterministic UUID from the Clerk user ID
+        // This ensures the same Clerk user always maps to the same Supabase UUID
+        const namespace = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // UUID namespace
+        const supabaseUUID = uuidv5(clerkUserId, namespace);
+
+        // Remove any existing user_id claims that Supabase won't recognize
+        delete decoded.user_id;
+
+        // Add the proper sub claim with UUID format
+        decoded.sub = supabaseUUID;
+
+        // Use Supabase's setSession which accepts a custom JWT
+        const { error } = await supabase.auth.setSession({
             access_token: token,
-            refresh_token: token,
+            refresh_token: '', // You might need to handle refresh tokens separately
         });
 
         if (error) {
-            console.error('Error setting Supabase session:', error);
+            console.error('Error updating Supabase session:', error);
             throw error;
         }
-
-        // Log the JWT claims for debugging
-        const jwt = decodeJWT(token);
-        console.log('JWT claims:', jwt?.payload);
-
-        return session;
     } catch (error) {
-        console.error('Error updating Supabase session:', error);
-        return null;
+        console.error('Error updating Supabase auth token:', error);
+        throw error;
     }
 };
 
