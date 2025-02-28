@@ -22,6 +22,7 @@ import { colors, spacing, typography, layout } from '@styles/theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useSignUp } from '@clerk/clerk-expo';
 import { supabase } from '@services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type RegisterScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Register'>;
 
@@ -203,26 +204,65 @@ const RegisterScreen: React.FC = () => {
    */
   const createOrUpdateProfile = async (clerkId: string, phone: string, name: string, username: string) => {
     try {
-      // Call the safely_create_profile function which expects clerk_id as text
-      // The function will handle the UUID conversion internally
-      const { data: profileId, error } = await supabase
-        .rpc('safely_create_profile', {
-          _clerk_id: clerkId,  // This is text and will be converted to UUID in the database
-          _name: name,
-          _username: username,
-          _phone: phone
-        });
-
-      if (error) {
-        console.error('Database error:', error);
-        throw error;
+      // Import the UUID conversion function
+      const { clerkIdToUuid } = await import('@services/supabase');
+      
+      // Convert Clerk ID to UUID
+      const clerkUuid = clerkIdToUuid(clerkId);
+      console.log('Creating profile with Clerk ID:', clerkId);
+      console.log('Converted to UUID:', clerkUuid);
+      
+      // Store these for later use
+      await AsyncStorage.setItem('clerk_user_id', clerkId);
+      await AsyncStorage.setItem('supabase_uuid', clerkUuid);
+      
+      // Create profile directly (not through RPC initially)
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          clerk_id: clerkUuid,  // Store the UUID version of clerk_id
+          name,
+          username: username.toLowerCase(),
+          phone,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+  
+      if (insertError) {
+        // If insert fails, check if it's because profile already exists
+        if (insertError.code === '23505') { // Unique violation
+          // Try to update instead
+          const { data: existingProfile, error: fetchError } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('clerk_id', clerkUuid)
+            .single();
+            
+          if (fetchError) throw fetchError;
+          
+          // Update the existing profile
+          const { data: updatedProfile, error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              name,
+              username: username.toLowerCase(),
+              phone,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingProfile.id)
+            .select()
+            .single();
+            
+          if (updateError) throw updateError;
+          return updatedProfile.id;
+        } else {
+          throw insertError;
+        }
       }
-
-      if (!profileId) {
-        throw new Error('No profile ID returned');
-      }
-
-      return profileId;
+      
+      return newProfile.id;
     } catch (error) {
       console.error('Error in createOrUpdateProfile:', error);
       throw error;

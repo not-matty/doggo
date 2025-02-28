@@ -62,57 +62,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { isSignedIn, userId } = useAuth();
 
     // Fetch profile data using either clerk_id or directly using the UUID
-    const fetchProfile = async () => {
-        try {
-            if (!userId) return;
-
-            dispatch({ type: 'SET_LOADING', payload: true });
-
-            // Get the converted UUID from storage if available
-            const clerkId = await AsyncStorage.getItem('clerk_user_id') || userId;
-            
-            // First try to fetch by clerk_id
-            const { data: profile, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('clerk_id', clerkId)
-                .single();
-
-            if (error) {
-                console.log('Error fetching by clerk_id, trying UUID conversion');
-                
-                // If that fails, try with UUID conversion
-                const supabaseUuid = clerkIdToUuid(clerkId);
-                
-                const { data: profileByUuid, error: uuidError } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', supabaseUuid)
-                    .single();
-
-                if (uuidError) {
-                    throw uuidError;
-                }
-
-                if (profileByUuid) {
-                    dispatch({ type: 'SET_PROFILE', payload: profileByUuid });
-                    dispatch({ type: 'SET_LAST_SYNC', payload: Date.now() });
-                } else {
-                    // If we still can't find a profile, we may need to create one
-                    console.log('No profile found, may need to create one');
-                    dispatch({ type: 'SET_ERROR', payload: 'No profile found' });
-                }
-            } else if (profile) {
-                dispatch({ type: 'SET_PROFILE', payload: profile });
-                dispatch({ type: 'SET_LAST_SYNC', payload: Date.now() });
-            }
-        } catch (error) {
-            console.error('Error fetching profile:', error);
-            dispatch({ type: 'SET_ERROR', payload: 'Failed to load profile' });
-        } finally {
-            dispatch({ type: 'SET_LOADING', payload: false });
-        }
-    };
+    // Fetch profile data using the UUID converted from clerk_id
+const fetchProfile = async () => {
+    try {
+      if (!userId) return;
+  
+      dispatch({ type: 'SET_LOADING', payload: true });
+  
+      // Get the converted UUID
+      const clerkId = await AsyncStorage.getItem('clerk_user_id') || userId;
+      const supabaseUuid = clerkIdToUuid(clerkId);
+      
+      // Store for future use
+      await AsyncStorage.setItem('supabase_uuid', supabaseUuid);
+      
+      console.log('Fetching profile for clerk_id:', clerkId);
+      console.log('Converted to UUID:', supabaseUuid);
+  
+      // Fetch using the UUID
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('clerk_id', supabaseUuid)
+        .single();
+  
+      if (error) {
+        console.error('Error fetching profile:', error);
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to load profile' });
+      } else if (profile) {
+        dispatch({ type: 'SET_PROFILE', payload: profile });
+        dispatch({ type: 'SET_LAST_SYNC', payload: Date.now() });
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to load profile' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
 
     // Refresh profile data
     const refreshProfile = async () => {
