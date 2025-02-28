@@ -193,51 +193,36 @@ const RegisterScreen: React.FC = () => {
     }
   };
 
+  /**
+   * Creates or updates a user profile in Supabase
+   * @param clerkId - The Clerk user ID (text) which will be converted to UUID in the database
+   * @param phone - The user's phone number
+   * @param name - The user's full name
+   * @param username - The user's username
+   * @returns The profile ID (UUID)
+   */
   const createOrUpdateProfile = async (clerkId: string, phone: string, name: string, username: string) => {
     try {
-      // First check if profile exists with this phone number
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('phone', phone)
-        .single();
+      // Call the safely_create_profile function which expects clerk_id as text
+      // The function will handle the UUID conversion internally
+      const { data: profileId, error } = await supabase
+        .rpc('safely_create_profile', {
+          _clerk_id: clerkId,  // This is text and will be converted to UUID in the database
+          _name: name,
+          _username: username,
+          _phone: phone
+        });
 
-      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 means no rows found
-        throw fetchError;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
       }
 
-      if (existingProfile) {
-        // Update existing profile with new Clerk ID
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            clerk_id: clerkId,
-            name,
-            username,
-            updated_at: new Date().toISOString()
-          })
-          .eq('phone', phone);
-
-        if (updateError) throw updateError;
-        return existingProfile.id;
-      } else {
-        // Create new profile
-        const { data: newProfile, error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            clerk_id: clerkId,
-            name,
-            username,
-            phone,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        return newProfile.id;
+      if (!profileId) {
+        throw new Error('No profile ID returned');
       }
+
+      return profileId;
     } catch (error) {
       console.error('Error in createOrUpdateProfile:', error);
       throw error;

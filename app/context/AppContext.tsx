@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useReducer, ReactNode } from 'react';
 import { User } from '@navigation/types';
 import { useAuth } from '@clerk/clerk-expo';
-import { supabase } from '@services/supabase';
+import { supabase, clerkIdToUuid, getCurrentUserUuid } from '@services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Define the state shape
 interface AppState {
@@ -60,20 +61,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(appReducer, initialState);
     const { isSignedIn, userId } = useAuth();
 
-    // Fetch profile data
+    // Fetch profile data using either clerk_id or directly using the UUID
     const fetchProfile = async () => {
         try {
             if (!userId) return;
 
+            dispatch({ type: 'SET_LOADING', payload: true });
+
+            // Get the converted UUID from storage if available
+            const clerkId = await AsyncStorage.getItem('clerk_user_id') || userId;
+            
+            // First try to fetch by clerk_id
             const { data: profile, error } = await supabase
                 .from('profiles')
                 .select('*')
-                .eq('clerk_id', userId)
+                .eq('clerk_id', clerkId)
                 .single();
 
-            if (error) throw error;
+            if (error) {
+                console.log('Error fetching by clerk_id, trying UUID conversion');
+                
+                // If that fails, try with UUID conversion
+                const supabaseUuid = clerkIdToUuid(clerkId);
+                
+                const { data: profileByUuid, error: uuidError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', supabaseUuid)
+                    .single();
 
-            if (profile) {
+                if (uuidError) {
+                    throw uuidError;
+                }
+
+                if (profileByUuid) {
+                    dispatch({ type: 'SET_PROFILE', payload: profileByUuid });
+                    dispatch({ type: 'SET_LAST_SYNC', payload: Date.now() });
+                } else {
+                    // If we still can't find a profile, we may need to create one
+                    console.log('No profile found, may need to create one');
+                    dispatch({ type: 'SET_ERROR', payload: 'No profile found' });
+                }
+            } else if (profile) {
                 dispatch({ type: 'SET_PROFILE', payload: profile });
                 dispatch({ type: 'SET_LAST_SYNC', payload: Date.now() });
             }
@@ -99,13 +128,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
             if (!userId || !state.profile?.id) return;
 
+            // Get the current user's UUID
+            const profileId = state.profile.id;
+
             const { data, error } = await supabase
                 .from('profiles')
                 .update({
                     ...updates,
                     updated_at: new Date().toISOString(),
                 })
-                .eq('id', state.profile.id)
+                .eq('id', profileId)
                 .select()
                 .single();
 
@@ -146,4 +178,4 @@ export function useApp() {
         throw new Error('useApp must be used within an AppProvider');
     }
     return context;
-} 
+}

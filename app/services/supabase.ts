@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import { jwtDecode } from 'jwt-decode';
 import { v5 as uuidv5 } from 'uuid';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Use expoConfig instead of deprecated manifest
 const supabaseUrl = Constants.expoConfig?.extra?.SUPABASE_URL || '';
@@ -18,6 +19,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
 });
 
+// Consistent namespace for UUID v5 generation
+const UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Standard UUID namespace
+
+// Convert Clerk ID to UUID format
+export const clerkIdToUuid = (clerkId: string): string => {
+    try {
+        return uuidv5(clerkId, UUID_NAMESPACE);
+    } catch (error) {
+        console.error('Error converting Clerk ID to UUID:', error);
+        throw error;
+    }
+};
+
 // Function to update the Supabase auth token
 export const updateSupabaseAuthToken = async (token: string | null): Promise<void> => {
     try {
@@ -31,31 +45,32 @@ export const updateSupabaseAuthToken = async (token: string | null): Promise<voi
         const decoded: any = jwtDecode(token);
 
         // Get the Clerk user ID
-        const clerkUserId = decoded.user_id || decoded.sub;
+        const clerkUserId = decoded.sub || decoded.user_id;
 
         if (!clerkUserId) {
             throw new Error('No user ID found in token');
         }
 
-        // Generate a deterministic UUID from the Clerk user ID
-        // This ensures the same Clerk user always maps to the same Supabase UUID
-        const namespace = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // UUID namespace
-        const supabaseUUID = uuidv5(clerkUserId, namespace);
+        // Store this mapping for future use
+        await AsyncStorage.setItem('clerk_user_id', clerkUserId);
+        
+        // Convert to UUID format for Supabase
+        const supabaseUUID = clerkIdToUuid(clerkUserId);
+        
+        // Store the UUID mapping for direct database operations
+        await AsyncStorage.setItem('supabase_uuid', supabaseUUID);
 
-        // Remove any existing user_id claims that Supabase won't recognize
-        delete decoded.user_id;
+        console.log('Clerk ID:', clerkUserId);
+        console.log('Converted to Supabase UUID:', supabaseUUID);
 
-        // Add the proper sub claim with UUID format
-        decoded.sub = supabaseUUID;
-
-        // Use Supabase's setSession which accepts a custom JWT
-        const { error } = await supabase.auth.setSession({
-            access_token: token,
-            refresh_token: '', // You might need to handle refresh tokens separately
+        // The most reliable way to set up auth with Supabase is to directly use 
+        // their signIn method with the custom token from Clerk
+        const { error } = await supabase.auth.signInWithJwt({
+            token,
         });
 
         if (error) {
-            console.error('Error updating Supabase session:', error);
+            console.error('Error signing in with JWT:', error);
             throw error;
         }
     } catch (error) {
@@ -64,29 +79,12 @@ export const updateSupabaseAuthToken = async (token: string | null): Promise<voi
     }
 };
 
-// Helper function to decode base64 URL-safe string
-const decodeBase64Url = (str: string) => {
+// Helper to get the current user's UUID for Supabase operations
+export const getCurrentUserUuid = async (): Promise<string | null> => {
     try {
-        const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-        const decoded = atob(base64);
-        return decoded;
+        return await AsyncStorage.getItem('supabase_uuid');
     } catch (error) {
-        console.error('Error decoding base64:', error);
-        return null;
-    }
-};
-
-// Helper function to decode JWT parts
-const decodeJWT = (token: string) => {
-    try {
-        const [headerB64, payloadB64, signatureB64] = token.split('.');
-        return {
-            header: JSON.parse(decodeBase64Url(headerB64) || '{}'),
-            payload: JSON.parse(decodeBase64Url(payloadB64) || '{}'),
-            signature: signatureB64
-        };
-    } catch (error) {
-        console.error('Error decoding JWT:', error);
+        console.error('Error getting current user UUID:', error);
         return null;
     }
 };
