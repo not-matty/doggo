@@ -15,8 +15,10 @@ import { AuthContext } from '@context/AuthContext';
 import EmptyState from '@components/common/EmptyState';
 import { User } from '@navigation/types';
 import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { colors, spacing, typography } from '@styles/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MainStackParamList } from '@navigation/types';
 
 interface Match {
     id: string;
@@ -53,7 +55,7 @@ const LikesScreen: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const { user } = useContext(AuthContext);
-    const navigation = useNavigation();
+    const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
 
     useEffect(() => {
         // Only do initial fetch on first mount
@@ -206,7 +208,7 @@ const LikesScreen: React.FC = () => {
             navigation.navigate('Profile');
         } else {
             // If it's another user's profile, navigate to their ProfileDetails
-            navigation.navigate('ProfileDetails' as never, { userId } as never);
+            navigation.navigate('ProfileDetails', { userId });
         }
     };
 
@@ -256,8 +258,7 @@ const LikesScreen: React.FC = () => {
                 onRefresh={handleRefresh}
                 ListEmptyComponent={
                     <EmptyState
-                        message="No matches yet"
-                        subMessage="When you and someone else like each other, you'll see them here"
+                        message="No matches yet. When you and someone else like each other, you'll see them here"
                     />
                 }
             />

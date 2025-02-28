@@ -229,6 +229,7 @@ const HomeScreen = () => {
   // Define refs
   const scrollY = useRef(new Animated.Value(0)).current;
   const didInitializeRef = useRef(false);
+  const didFetchPostsRef = useRef(false); // Add ref to track if we've already fetched posts
 
   // Define viewability configuration first
   const viewabilityConfig = {
@@ -243,18 +244,6 @@ const HomeScreen = () => {
     return 'Not authenticated';
   }, [profile?.id, profile?.username]);
 
-  // Define handleRefresh first
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await fetchPosts(true); // We'll define fetchPosts below
-    } catch (error) {
-      console.error('Error refreshing posts:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  }, []); // Empty dependency array initially
-
   // Define handleDeletePost before it's used in other components
   const handleDeletePost = useCallback((postId: string) => {
     setPosts(currentPosts => currentPosts.filter(post => post.id !== postId));
@@ -263,9 +252,20 @@ const HomeScreen = () => {
   // Forward declare fetchPosts
   const fetchPosts = async (forceRefresh = false) => {
     try {
+      // Log the source of this fetch request for debugging
+      console.log(`fetchPosts called - source: ${forceRefresh ? 'manual refresh' : 'automatic'}`);
+
+      // Skip if we're already loading with existing posts and not forcing refresh
       if (!forceRefresh && (loading && posts.length > 0)) {
         console.log('Skipping fetchPosts - already loading with existing posts');
         return; // Already loading with existing posts
+      }
+
+      // If this is an automatic fetch (not force refresh) and we've already fetched posts once,
+      // skip to prevent infinite fetching loops
+      if (!forceRefresh && didFetchPostsRef.current && posts.length > 0) {
+        console.log('Skipping automatic fetchPosts - posts already loaded and not a manual refresh');
+        return;
       }
 
       // Don't set loading if we're just refreshing
@@ -354,8 +354,18 @@ const HomeScreen = () => {
     }
   };
 
-  // Update handleRefresh dependency to include fetchPosts
-  handleRefresh.dependencies = [fetchPosts];
+  // Define handleRefresh after fetchPosts is defined
+  const handleRefresh = useCallback(async () => {
+    console.log('🔄 MANUAL REFRESH: User pulled to refresh - this is the only way posts should refresh after initial load');
+    setRefreshing(true);
+    try {
+      await fetchPosts(true); // Pass true to force refresh
+    } catch (error) {
+      console.error('Error refreshing posts:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchPosts]);
 
   // Define all animation-related hooks
   const headerTranslateY = scrollY.interpolate({
@@ -689,20 +699,29 @@ const HomeScreen = () => {
           return;
         }
 
-        if (profile?.id) {
-          console.log('Home: Profile available, proceeding with init');
-          setLoadingStage('Fetching posts');
-          await fetchPosts();
-        } else {
-          const storedProfileId = await checkCachedProfileId();
-          if (storedProfileId) {
-            console.log('Home: Using cached profile ID');
-            setLoadingStage('Fetching posts with cached ID');
+        // Only fetch posts if we haven't already
+        if (!didFetchPostsRef.current) {
+          if (profile?.id) {
+            console.log('Home: Profile available, proceeding with initial fetch');
+            setLoadingStage('Fetching posts');
             await fetchPosts();
+            didFetchPostsRef.current = true; // Mark as fetched
           } else {
-            console.log('Home: No profile available, fetching posts anyway');
-            await fetchPosts();
+            const storedProfileId = await checkCachedProfileId();
+            if (storedProfileId) {
+              console.log('Home: Using cached profile ID for initial fetch');
+              setLoadingStage('Fetching posts with cached ID');
+              await fetchPosts();
+              didFetchPostsRef.current = true; // Mark as fetched
+            } else {
+              console.log('Home: No profile available, fetching posts anyway');
+              await fetchPosts();
+              didFetchPostsRef.current = true; // Mark as fetched
+            }
           }
+          console.log('Initial posts fetch completed - future fetches will be manual only');
+        } else {
+          console.log('Skipping initial fetch - posts already fetched');
         }
 
         setLoadingStage('Ready');
@@ -741,22 +760,40 @@ const HomeScreen = () => {
       debouncedLogDebugInfo();
     }
 
-    // If we just got user/profile and have no posts, fetch them
-    if ((user?.id || profile?.id || userId) && posts.length === 0 && !loading) {
+    // IMPORTANT: Only fetch posts ONCE after authentication and only if we haven't already
+    if (!didFetchPostsRef.current && (user?.id || profile?.id || userId) && posts.length === 0 && !loading) {
+      console.log('Initial fetch of posts for newly authenticated user - THIS SHOULD HAPPEN ONLY ONCE');
+      didFetchPostsRef.current = true; // Mark as fetched to prevent future automatic fetches
       fetchPosts();
+
+      // If profile is loaded, log confirmation
+      if (profile?.id) {
+        console.log(`Profile confirmed loaded: ${profile.id}, stop refresh, and only have drag to refresh (manually).`);
+      }
     }
 
-    // Set up a timer to periodically check auth state
-    // This is more efficient than relying on dependency changes
-    const authCheckTimer = setInterval(() => {
-      // Only check if we're not already loading
-      if (!loading && showDebug) {
-        debouncedLogDebugInfo();
-      }
-    }, 15000); // Check every 15 seconds
+    // Only set up the auth check timer if we're not authenticated yet
+    if (!profile?.id && showDebug) {
+      // Set up a timer to periodically check auth state
+      const authCheckTimer = setInterval(() => {
+        // Only check if we're not already loading
+        if (!loading && showDebug) {
+          debouncedLogDebugInfo();
+        }
+      }, 15000); // Check every 15 seconds
 
-    return () => clearInterval(authCheckTimer);
-  }, [user?.id, profile?.id, userId, isSignedIn, showDebug, debouncedLogDebugInfo, posts.length, loading, fetchPosts]);
+      return () => clearInterval(authCheckTimer);
+    }
+
+    // If we're authenticated and debug was enabled, log debug info once more
+    if (profile?.id && showDebug) {
+      console.log('Authentication confirmed - stopping periodic debug refreshes');
+      debouncedLogDebugInfo();
+    }
+
+    // No timer to clean up if we didn't create one
+    return undefined;
+  }, [user?.id, profile?.id, userId, isSignedIn, showDebug, debouncedLogDebugInfo, posts.length, loading]); // REMOVED fetchPosts from dependencies
 
   // Render
   if (loading && posts.length === 0) {

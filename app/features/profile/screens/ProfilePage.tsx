@@ -278,7 +278,7 @@ const ProfilePage: React.FC = () => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 1,
@@ -353,10 +353,13 @@ const ProfilePage: React.FC = () => {
           ...prev,
           profile_picture_url: urlData.publicUrl
         } : null);
+
+        // Show success message
+        Alert.alert('Success', 'Profile picture updated successfully!');
       }
     } catch (err) {
       console.error('Error updating profile picture:', err);
-      Alert.alert('Error', 'Failed to update profile picture');
+      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
     } finally {
       setUploadingImage(false);
     }
@@ -536,9 +539,17 @@ const ProfilePage: React.FC = () => {
                       }}
                       style={styles.profileImage}
                     />
-                    {profile?.id === authUser?.id && (
+                    {profile?.id === authUser?.id && !uploadingImage && (
                       <View style={styles.profileImageOverlay}>
-                        <Feather name="camera" size={20} color={colors.background} />
+                        <View style={styles.cameraIconContainer}>
+                          <Feather name="camera" size={20} color={colors.background} />
+                        </View>
+                      </View>
+                    )}
+                    {uploadingImage && (
+                      <View style={styles.uploadingOverlay}>
+                        <ActivityIndicator size="large" color={colors.background} />
+                        <Text style={styles.uploadingText}>Updating...</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -810,6 +821,31 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: PROFILE_IMAGE_SIZE / 2,
+  },
+  cameraIconContainer: {
+    backgroundColor: colors.primary,
+    padding: 8,
+    borderRadius: 20,
+    ...shadows.sm,
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: PROFILE_IMAGE_SIZE / 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadingText: {
+    color: colors.background,
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 
