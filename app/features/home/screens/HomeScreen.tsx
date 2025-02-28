@@ -1,6 +1,6 @@
 // app/features/home/screens/HomeScreen.tsx
 
-import React, { useEffect, useState, useContext, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useContext, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   RefreshControl,
   Linking,
   FlatListProps,
+  Button,
 } from 'react-native';
 import { supabase } from '@services/supabase';
 import { User } from '@navigation/types';
@@ -34,7 +35,18 @@ import { BlurView } from 'expo-blur';
 import * as Contacts from 'expo-contacts';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useApp } from '@context/AppContext';
+import { useAuth } from '@clerk/clerk-expo';
+import { debounce } from 'lodash';
 
+// Constants moved to the top
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+const HEADER_HEIGHT = 60;
+const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
+
+// Types
 type HomeScreenNavigationProp = StackNavigationProp<MainStackParamList, 'Home'>;
 
 interface Post {
@@ -90,59 +102,196 @@ interface ViewableItemsChanged {
   }>;
 }
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
-const HEADER_HEIGHT = 60;
-const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
+// Debug Overlay Component - Defined outside the main component
+interface DebugOverlayProps {
+  getAuthStateDisplay: () => string;
+  loading: boolean;
+  loadingStage: string;
+  posts: Post[];
+  user: User | null;
+  profile: any;
+  debouncedLogDebugInfo: () => void;
+  setLoadingStage: React.Dispatch<React.SetStateAction<string>>;
+  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  fetchPosts: (forceRefresh?: boolean) => Promise<void>;
+}
 
+const DebugOverlayComponent = ({
+  getAuthStateDisplay,
+  loading,
+  loadingStage,
+  posts,
+  user,
+  profile,
+  debouncedLogDebugInfo,
+  setLoadingStage,
+  setLoading,
+  fetchPosts
+}: DebugOverlayProps) => {
+  // Add a ref to track last update time
+  const lastUpdateRef = useRef(Date.now());
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const [localDebugInfo, setLocalDebugInfo] = useState({
+    auth: getAuthStateDisplay(),
+    loading: loading ? 'Yes' : 'No',
+    stage: loadingStage,
+    posts: posts.length.toString(),
+    user: user ? user.username : 'None',
+    profile: profile ? profile.username : 'None',
+    clerkId: profile?.clerk_id || 'None'
+  });
+
+  // Reformat the debug info for display
+  const resetLoading = () => {
+    setLoadingStage('Ready');
+    debouncedLogDebugInfo();
+  };
+
+  // This will manually refresh content
+  const refreshContent = async () => {
+    setLoading(true);
+    setLoadingStage('Manual refresh...');
+    await fetchPosts(true);
+    setLoading(false);
+    setLoadingStage('Ready');
+    debouncedLogDebugInfo();
+  };
+
+  // Only update the debug UI at most once every 5 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      // Only update if it's been more than 5 seconds
+      if (Date.now() - lastUpdateRef.current > 5000) {
+        lastUpdateRef.current = Date.now();
+        setLastUpdate(Date.now());
+        setLocalDebugInfo({
+          auth: getAuthStateDisplay(),
+          loading: loading ? 'Yes' : 'No',
+          stage: loadingStage,
+          posts: posts.length.toString(),
+          user: user ? user.username : 'None',
+          profile: profile ? profile.username : 'None',
+          clerkId: profile?.clerk_id || 'None'
+        });
+      }
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [getAuthStateDisplay, loading, loadingStage, posts.length, user, profile]);
+
+  return (
+    <View style={styles.debugOverlay}>
+      <Text style={styles.debugTitle}>DEBUG INFO</Text>
+      <Text style={styles.debugText}>Auth: {localDebugInfo.auth}</Text>
+      <Text style={styles.debugText}>Loading: {localDebugInfo.loading}</Text>
+      <Text style={styles.debugText}>Stage: {localDebugInfo.stage}</Text>
+      <Text style={styles.debugText}>Posts: {localDebugInfo.posts}</Text>
+      <Text style={styles.debugText}>User: {localDebugInfo.user}</Text>
+      <Text style={styles.debugText}>Profile: {localDebugInfo.profile}</Text>
+      <Text style={styles.debugText}>Clerk ID: {localDebugInfo.clerkId}</Text>
+      <Text style={styles.debugText}>Last Update: {new Date(lastUpdate).toLocaleTimeString()}</Text>
+      <View style={styles.debugButtons}>
+        <TouchableOpacity style={styles.debugButton} onPress={resetLoading}>
+          <Text style={styles.debugButtonText}>Reset Stage</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.debugButton} onPress={refreshContent}>
+          <Text style={styles.debugButtonText}>Refresh</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// Create animated component outside of render
 const AnimatedFlatList = Animated.createAnimatedComponent(
   FlatList
 ) as React.ComponentType<FlatListProps<Post>>;
 
-export const HomeScreen: React.FC = () => {
+// Main component
+const HomeScreen = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { user } = useContext(AuthContext);
+  const { state: { profile } } = useApp();
+  const { userId, isSignedIn } = useAuth();
+
+  // Define all state hooks at the top level of the component
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-  const scrollY = useRef(new Animated.Value(0)).current;
   const [preloadedProfiles, setPreloadedProfiles] = useState<Set<string>>(new Set());
+  const [debugMessage, setDebugMessage] = useState<string>('');
+  const [showDebug, setShowDebug] = useState<boolean>(true);
+  const [loadingStage, setLoadingStage] = useState<string>('Initializing...');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const headerTranslateY = scrollY.interpolate({
-    inputRange: [0, TOTAL_HEADER_HEIGHT],
-    outputRange: [0, -TOTAL_HEADER_HEIGHT],
-    extrapolate: 'clamp'
-  });
+  // Define refs
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const didInitializeRef = useRef(false);
 
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
-    outputRange: [1, 0.5, 0],
-    extrapolate: 'clamp'
-  });
-
-  const requestContactsPermission = async () => {
-    try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Please grant contacts permission to see posts from your contacts.'
-        );
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error('Error requesting contacts permission:', error);
-      return false;
-    }
+  // Define viewability configuration first
+  const viewabilityConfig = {
+    itemVisiblePercentThreshold: 50
   };
 
-  const fetchPosts = async () => {
+  // First define all callback functions needed by other hooks
+  const getAuthStateDisplay = useCallback(() => {
+    if (profile?.id) {
+      return `Authenticated as: ${profile.username || profile.id}`;
+    }
+    return 'Not authenticated';
+  }, [profile?.id, profile?.username]);
+
+  // Define handleRefresh first
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     try {
-      setLoading(true);
+      await fetchPosts(true); // We'll define fetchPosts below
+    } catch (error) {
+      console.error('Error refreshing posts:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []); // Empty dependency array initially
+
+  // Define handleDeletePost before it's used in other components
+  const handleDeletePost = useCallback((postId: string) => {
+    setPosts(currentPosts => currentPosts.filter(post => post.id !== postId));
+  }, []);
+
+  // Forward declare fetchPosts
+  const fetchPosts = async (forceRefresh = false) => {
+    try {
+      if (!forceRefresh && (loading && posts.length > 0)) {
+        console.log('Skipping fetchPosts - already loading with existing posts');
+        return; // Already loading with existing posts
+      }
+
+      // Don't set loading if we're just refreshing
+      if (!refreshing) {
+        setLoadingStage('Fetching posts...');
+        setLoading(true);
+      }
+
+      // Get profile ID from AsyncStorage if not available from context
+      let profileId = profile?.id;
+      if (!profileId) {
+        const storedProfileId = await AsyncStorage.getItem('profile_id');
+        profileId = storedProfileId || undefined;
+
+        if (profileId) {
+          console.log('Using profile ID from AsyncStorage:', profileId);
+          // Store authentication state for other components to use
+          await AsyncStorage.setItem('is_authenticated', 'true');
+        }
+      } else {
+        // Ensure we store the authenticated state when we have a profile
+        await AsyncStorage.setItem('is_authenticated', 'true');
+      }
+
+      // Even if we don't have a profile ID, we should still fetch posts
+      // This ensures content loads even if auth isn't ready
       const { data, error } = await supabase
         .from('photos')
         .select(`
@@ -164,7 +313,12 @@ export const HomeScreen: React.FC = () => {
         .limit(20)
         .returns<PhotoWithProfile[]>();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching posts:', error);
+        setLoadingStage(`Error: ${error.message || 'Unknown error'}`);
+        setErrorMessage('Failed to load posts. Pull down to retry.');
+        return; // Return instead of throwing to prevent cascading errors
+      }
 
       // Ensure we have valid URLs for all posts
       const postsWithValidUrls = (data || []).map(post => ({
@@ -175,96 +329,69 @@ export const HomeScreen: React.FC = () => {
         user_id: post.user_id,
         user: {
           id: post.user.id,
-          name: post.user.name,
-          username: post.user.username,
+          name: post.user.name || 'Unknown',
+          username: post.user.username || 'user',
           profile_picture_url: post.user.profile_picture_url || null,
-          clerk_id: post.user.clerk_id,
+          clerk_id: post.user.clerk_id || '',
           likes: post.user.likes || 0
         }
       }));
 
+      console.log(`Fetched ${postsWithValidUrls.length} posts`);
       setPosts(postsWithValidUrls);
+      setLoadingStage('Posts loaded');
+      setErrorMessage(null); // Clear any previous errors
+
     } catch (error: any) {
       console.error('Error fetching posts:', error);
-      Alert.alert('Error', 'Failed to fetch posts');
+      setLoadingStage(`Error: ${error?.message || 'Unknown error'}`);
+      setErrorMessage('Failed to load posts. Pull down to retry.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    checkAndRequestImagePermissions();
-    if (user?.id) {
-      fetchPosts();
-    }
-  }, [user?.id]);
-
-  const checkAndRequestImagePermissions = async () => {
-    try {
-      const hasCheckedPermissions = await AsyncStorage.getItem('hasCheckedImagePermissions');
-      if (hasCheckedPermissions) return;
-
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Photo Access Required',
-          'doggo needs access to your photos to share and save images. Please enable it in your settings.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            {
-              text: 'Open Settings',
-              onPress: () => Linking.openSettings()
-            }
-          ]
-        );
+      // Only update loading state if we're not refreshing
+      if (!refreshing) {
+        setLoading(false);
       }
-      await AsyncStorage.setItem('hasCheckedImagePermissions', 'true');
-    } catch (error) {
-      console.error('Error checking image permissions:', error);
     }
   };
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchPosts();
-  };
+  // Update handleRefresh dependency to include fetchPosts
+  handleRefresh.dependencies = [fetchPosts];
 
-  const handleDeletePost = (postId: string) => {
-    setPosts(currentPosts => currentPosts.filter(post => post.id !== postId));
-  };
+  // Define all animation-related hooks
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, -TOTAL_HEADER_HEIGHT],
+    extrapolate: 'clamp'
+  });
 
-  const handleLike = async (post: Post) => {
-    try {
-      if (!user?.clerk_id) return;
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT / 2, TOTAL_HEADER_HEIGHT],
+    outputRange: [1, 0.5, 0],
+    extrapolate: 'clamp'
+  });
 
-      const { error: likeError } = await supabase
-        .from('likes')
-        .insert([
-          {
-            liker_id: user.clerk_id,
-            liked_id: post.user.clerk_id,
-            created_at: new Date().toISOString()
-          }
-        ]);
+  // Define handleScroll
+  const handleScroll = useMemo(() => {
+    return Animated.event<NativeSyntheticEvent<NativeScrollEvent>>(
+      [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+      { useNativeDriver: true }
+    );
+  }, [scrollY]);
 
-      if (likeError) throw likeError;
+  // Define renderRefreshControl
+  const memoizedRenderRefreshControl = useMemo(() => {
+    return (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        progressViewOffset={HEADER_HEIGHT}
+        tintColor={colors.primary}
+      />
+    );
+  }, [refreshing, handleRefresh]);
 
-      // Optimistically update UI
-      const updatedPosts = posts.map(p =>
-        p.id === post.id
-          ? { ...p, user: { ...p.user, likes: (p.user.likes || 0) + 1 } }
-          : p
-      );
-      setPosts(updatedPosts);
-
-    } catch (error: any) {
-      console.error('Error liking post:', error);
-      Alert.alert('Error', 'Failed to like post');
-    }
-  };
-
-  const navigateToProfile = (userId: string) => {
+  // Define navigateToProfile before it's used in preloadProfile
+  const navigateToProfile = useCallback((userId: string) => {
     // If it's the current user's profile, navigate directly to the Profile tab
     if (user?.id === userId) {
       // @ts-ignore - Navigating to root tab
@@ -273,9 +400,28 @@ export const HomeScreen: React.FC = () => {
       // If it's another user's profile, navigate to their ProfileDetails
       navigation.navigate('ProfileDetails', { userId });
     }
+  }, [navigation, user?.id]);
+
+  // Helper function for contacts and permissions
+  const requestContactsPermission = async () => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please grant contacts permission to see posts from your contacts.'
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error requesting contacts permission:', error);
+      return false;
+    }
   };
 
-  const preloadProfile = async (userId: string) => {
+  // Pre-declare preloadProfile before it's used in onViewableItemsChanged
+  const preloadProfile = useCallback(async (userId: string) => {
     if (preloadedProfiles.has(userId)) return;
 
     try {
@@ -309,9 +455,10 @@ export const HomeScreen: React.FC = () => {
     } catch (error) {
       console.error('Error preloading profile:', error);
     }
-  };
+  }, [preloadedProfiles]);
 
-  const onViewableItemsChanged = useCallback(({ viewableItems, changed }: {
+  // Define onViewableItemsChanged using the pre-declared preloadProfile
+  const onViewableItemsChanged = useCallback(({ viewableItems }: {
     viewableItems: Array<{
       item: Post;
       key: string;
@@ -330,16 +477,126 @@ export const HomeScreen: React.FC = () => {
         preloadProfile(item.user.id);
       }
     });
-  }, []);
+  }, [preloadProfile]);
 
-  const viewabilityConfig = {
-    itemVisiblePercentThreshold: 50
-  };
-
+  // Set up viewability config pairs after onViewableItemsChanged is defined
   const viewabilityConfigCallbackPairs = useRef([
     { viewabilityConfig, onViewableItemsChanged }
   ]);
 
+  // Define handleLike
+  const handleLike = useCallback(async (post: Post) => {
+    try {
+      if (!user?.clerk_id) return;
+
+      const { error: likeError } = await supabase
+        .from('likes')
+        .insert([
+          {
+            liker_id: user.clerk_id,
+            liked_id: post.user.clerk_id,
+            created_at: new Date().toISOString()
+          }
+        ]);
+
+      if (likeError) throw likeError;
+
+      // Optimistically update UI
+      setPosts(currentPosts =>
+        currentPosts.map(p =>
+          p.id === post.id
+            ? { ...p, user: { ...p.user, likes: (p.user.likes || 0) + 1 } }
+            : p
+        )
+      );
+
+    } catch (error: any) {
+      console.error('Error liking post:', error);
+      Alert.alert('Error', 'Failed to like post');
+    }
+  }, [user?.clerk_id]);
+
+  // Define logDebugInfo
+  const logDebugInfo = useCallback(() => {
+    // Create a snapshot of current state for logging
+    const authState = getAuthStateDisplay();
+    const stateSnapshot = {
+      'Auth': authState,
+      'Loading': loading ? 'Yes' : 'No',
+      'Stage': loadingStage,
+      'Posts': posts.length,
+      'User': user ? user.username : 'None',
+      'Profile': profile ? profile.username : 'None',
+      'Clerk ID': profile?.clerk_id || 'None',
+    };
+
+    console.log('===== DEBUG STATE =====');
+    Object.entries(stateSnapshot).forEach(([key, value]) => {
+      console.log(`${key}: ${value}`);
+    });
+    console.log('=======================');
+  }, [getAuthStateDisplay, loading, loadingStage, posts.length, user, profile]);
+
+  // Debounced version of logDebugInfo
+  const debouncedLogDebugInfo = useMemo(
+    () => debounce(logDebugInfo, 2000, { leading: true, trailing: true }),
+    [logDebugInfo]
+  );
+
+  // Toggle debug display
+  const toggleDebug = useCallback(() => {
+    setShowDebug(prevState => {
+      const newState = !prevState;
+      if (newState) {
+        // Log debug info when turning on the overlay
+        debouncedLogDebugInfo();
+      }
+      return newState;
+    });
+  }, [debouncedLogDebugInfo]);
+
+  // Helper for cached profile ID
+  const checkCachedProfileId = useCallback(async (): Promise<string | undefined> => {
+    try {
+      const cachedProfileId = await AsyncStorage.getItem('profile_id');
+      if (cachedProfileId) {
+        console.log('Found cached profile ID:', cachedProfileId);
+        return cachedProfileId;
+      }
+      return undefined;
+    } catch (error) {
+      console.error('Error checking cached profile ID:', error);
+      return undefined;
+    }
+  }, []);
+
+  // Check and request image permissions
+  const checkAndRequestImagePermissions = useCallback(async () => {
+    try {
+      const hasCheckedPermissions = await AsyncStorage.getItem('hasCheckedImagePermissions');
+      if (hasCheckedPermissions) return;
+
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Photo Access Required',
+          'doggo needs access to your photos to share and save images. Please enable it in your settings.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
+      }
+      await AsyncStorage.setItem('hasCheckedImagePermissions', 'true');
+    } catch (error) {
+      console.error('Error checking image permissions:', error);
+    }
+  }, []);
+
+  // Define renderPost after all its dependencies
   const renderPost = useCallback(({ item }: { item: Post }) => (
     <View style={styles.postContainer}>
       <TouchableOpacity
@@ -389,27 +646,139 @@ export const HomeScreen: React.FC = () => {
         </View>
       )}
     </View>
-  ), []);
+  ), [navigateToProfile, handleLike]);
 
-  const handleScroll = Animated.event<NativeSyntheticEvent<NativeScrollEvent>>(
-    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    { useNativeDriver: true }
-  );
-
-  const renderRefreshControl = () => (
-    <RefreshControl
-      refreshing={refreshing}
-      onRefresh={handleRefresh}
-      progressViewOffset={HEADER_HEIGHT}
-      tintColor={colors.primary}
-    />
-  );
-
-  if (loading) {
-    return (
-      <View style={styles.container}>
+  // Memoize the ListEmptyComponent
+  const ListEmptyComponent = useMemo(() => (
+    <View style={styles.emptyContainer}>
+      {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      ) : errorMessage ? (
+        <View>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => handleRefresh()}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <Text style={styles.emptyText}>No posts yet</Text>
+      )}
+    </View>
+  ), [loading, errorMessage, handleRefresh]);
+
+  // Initialize app - using useEffect with empty dependency array
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        // Only initialize once
+        if (didInitializeRef.current) {
+          console.log('App already initialized, skipping');
+          return;
+        }
+
+        console.log('Initializing app...');
+        didInitializeRef.current = true;
+
+        if (!loading && posts.length > 0) {
+          // If we have posts and we're not loading, we're ready
+          console.log('Already have posts, marking as ready');
+          setLoadingStage('Ready');
+          return;
+        }
+
+        if (profile?.id) {
+          console.log('Home: Profile available, proceeding with init');
+          setLoadingStage('Fetching posts');
+          await fetchPosts();
+        } else {
+          const storedProfileId = await checkCachedProfileId();
+          if (storedProfileId) {
+            console.log('Home: Using cached profile ID');
+            setLoadingStage('Fetching posts with cached ID');
+            await fetchPosts();
+          } else {
+            console.log('Home: No profile available, fetching posts anyway');
+            await fetchPosts();
+          }
+        }
+
+        setLoadingStage('Ready');
+      } catch (error) {
+        console.error('Error initializing app:', error);
+        setLoadingStage('Error during initialization');
+      } finally {
+        // Always exit loading state after initialization
+        setLoading(false);
+      }
+    };
+
+    initializeApp();
+
+    // Add a timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.log('Home screen timeout - forcing exit from loading state');
+        setLoading(false);
+        setLoadingStage('Timed out');
+      }
+    }, 15000); // Increased timeout to 15 seconds
+
+    return () => clearTimeout(timeout);
+  }, []); // Empty dependency array means this only runs once on mount
+
+  // Effect for auth state changes
+  useEffect(() => {
+    // Update loading stage when profile is available
+    if (profile?.id || (posts.length > 0 && loading === false)) {
+      setLoadingStage('Ready');
+    }
+
+    // Only log changes when debug is enabled
+    if (showDebug) {
+      debouncedLogDebugInfo();
+    }
+
+    // If we just got user/profile and have no posts, fetch them
+    if ((user?.id || profile?.id || userId) && posts.length === 0 && !loading) {
+      fetchPosts();
+    }
+
+    // Set up a timer to periodically check auth state
+    // This is more efficient than relying on dependency changes
+    const authCheckTimer = setInterval(() => {
+      // Only check if we're not already loading
+      if (!loading && showDebug) {
+        debouncedLogDebugInfo();
+      }
+    }, 15000); // Check every 15 seconds
+
+    return () => clearInterval(authCheckTimer);
+  }, [user?.id, profile?.id, userId, isSignedIn, showDebug, debouncedLogDebugInfo, posts.length, loading, fetchPosts]);
+
+  // Render
+  if (loading && posts.length === 0) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>{loadingStage}</Text>
+        {showDebug && (
+          <DebugOverlayComponent
+            getAuthStateDisplay={getAuthStateDisplay}
+            loading={loading}
+            loadingStage={loadingStage}
+            posts={posts}
+            user={user}
+            profile={profile}
+            debouncedLogDebugInfo={debouncedLogDebugInfo}
+            setLoadingStage={setLoadingStage}
+            setLoading={setLoading}
+            fetchPosts={fetchPosts}
+          />
+        )}
+      </SafeAreaView>
     );
   }
 
@@ -426,6 +795,9 @@ export const HomeScreen: React.FC = () => {
       >
         <View style={styles.header}>
           <Text style={styles.headerTitle}>doggo</Text>
+          <TouchableOpacity onPress={toggleDebug} style={styles.debugButton}>
+            <Text style={styles.debugButtonText}>Debug</Text>
+          </TouchableOpacity>
         </View>
       </Animated.View>
 
@@ -433,18 +805,16 @@ export const HomeScreen: React.FC = () => {
         data={posts}
         renderItem={renderPost}
         keyExtractor={(item: Post) => item.id}
-        refreshControl={renderRefreshControl()}
+        refreshControl={memoizedRenderRefreshControl}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.listContainer]}
         onScroll={handleScroll}
         scrollEventThrottle={1}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-            <Text style={styles.emptySubText}>Follow people to see their posts</Text>
-          </View>
-        }
+        ListEmptyComponent={ListEmptyComponent}
+        removeClippedSubviews={true} // Optimize memory usage
+        maxToRenderPerBatch={5} // Limit number of items rendered per batch
+        windowSize={7} // Reduce the number of items rendered outside of the visible area
       />
 
       <PhotoViewer
@@ -457,6 +827,21 @@ export const HomeScreen: React.FC = () => {
         onDelete={handleDeletePost}
         isOwner={selectedPost?.user.id === user?.id}
       />
+
+      {showDebug && (
+        <DebugOverlayComponent
+          getAuthStateDisplay={getAuthStateDisplay}
+          loading={loading}
+          loadingStage={loadingStage}
+          posts={posts}
+          user={user}
+          profile={profile}
+          debouncedLogDebugInfo={debouncedLogDebugInfo}
+          setLoadingStage={setLoadingStage}
+          setLoading={setLoading}
+          fetchPosts={fetchPosts}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -563,6 +948,72 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: 0.5,
     textAlign: 'left',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    color: colors.textSecondary,
+    fontSize: typography.body.fontSize,
+  },
+  debugOverlay: {
+    position: 'absolute',
+    bottom: 80,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 10,
+    borderRadius: 5,
+    maxWidth: '80%',
+    zIndex: 1000,
+  },
+  debugTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
+  },
+  debugText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  debugButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  debugButton: {
+    backgroundColor: colors.surface,
+    padding: spacing.xs,
+    borderRadius: layout.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  debugButtonText: {
+    color: colors.primary,
+    fontSize: 12,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: typography.body.fontSize,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: layout.borderRadius.md,
+    alignSelf: 'center',
+  },
+  retryButtonText: {
+    color: colors.background,
+    fontSize: typography.body.fontSize,
+    fontWeight: '500',
   },
 });
 

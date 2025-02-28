@@ -22,6 +22,7 @@ import { colors, spacing, typography, layout } from '@styles/theme';
 import Feather from 'react-native-vector-icons/Feather';
 import { useSignIn, useAuth } from '@clerk/clerk-expo';
 import { supabase } from '@services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 
@@ -120,21 +121,81 @@ const LoginScreen: React.FC = () => {
       // Set the session active
       await setActive!({ session: result.createdSessionId });
 
-      // Update the existing profile with the new Clerk ID
+      // The ClerkProvider will handle linking the userId and profile
+      // We'll just do a quick check for profile_id to avoid redundant processing
+      const profileId = await AsyncStorage.getItem('profile_id');
+
+      // If profile ID exists, we're already good to go
+      if (profileId) {
+        console.log('Login complete with profile:', profileId);
+        return;
+      }
+
+      // Get the Clerk user ID - needed only if no profile is found
+      if (!userId) {
+        console.error('No Clerk user ID available after login');
+        return;
+      }
+
+      // To avoid race conditions with ClerkProvider, wait a short time
+      // for the profile check to complete there before proceeding
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Check again after waiting - ClerkProvider might have set it by now
+      const profileIdAfterWait = await AsyncStorage.getItem('profile_id');
+      if (profileIdAfterWait) {
+        console.log('Profile found after waiting:', profileIdAfterWait);
+        return;
+      }
+
+      // If still no profile, then we need to create the link with the phone number
+      console.log('No profile linked yet, attempting to link phone to Clerk ID');
+
+      // Convert Clerk ID to UUID format for Supabase
+      const { clerkIdToUuid } = await import('@services/supabase');
+      const clerkUuid = clerkIdToUuid(userId);
+
+      // Get clean phone number
       const cleanedPhone = phone.replace(/\D/g, '');
       const fullPhoneNumber = `+${countryCode}${cleanedPhone}`;
 
-      const { error: updateError } = await supabase
+      // First, try to find the profile by phone number
+      const { data: profileByPhone, error: phoneError } = await supabase
         .from('profiles')
-        .update({
-          clerk_id: userId,
-          updated_at: new Date().toISOString()
-        })
-        .eq('phone', fullPhoneNumber);
+        .select('id')
+        .eq('phone', fullPhoneNumber)
+        .single();
 
-      if (updateError) {
-        console.error('Error updating profile:', updateError);
-        // Continue anyway as this isn't critical
+      if (phoneError && phoneError.code !== 'PGRST116') {
+        console.error('Error finding profile by phone:', phoneError);
+      }
+
+      if (profileByPhone) {
+        // Update the existing profile with Clerk UUID
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            clerk_id: clerkUuid,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', profileByPhone.id);
+
+        if (updateError) {
+          console.error('Error updating profile with Clerk ID:', updateError);
+        } else {
+          console.log('Profile updated successfully with Clerk ID:', profileByPhone.id);
+          // Store the profile ID for later use
+          await AsyncStorage.setItem('profile_id', profileByPhone.id);
+
+          // Also mark this Clerk ID as processed to prevent redundant checks
+          await AsyncStorage.setItem('last_profile_check', JSON.stringify({
+            userId,
+            timestamp: Date.now()
+          }));
+        }
+      } else {
+        console.log('No profile found by phone number, may need to create one');
+        // Consider creating a minimal profile here if needed
       }
 
     } catch (error: any) {

@@ -31,8 +31,18 @@ import * as Contacts from 'expo-contacts';
 import { useApp } from '@context/AppContext';
 import PhotoGrid from '@components/common/PhotoGrid';
 import ProfileHeader from '@components/profile/ProfileHeader';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ProfileDetailsRouteProp = RouteProp<ProfileStackParamList, 'ProfileDetails'>;
+
+// Define type for unregistered contact explicitly
+interface UnregisteredContact {
+  id: string;
+  name: string;
+  phone: string;
+  user_id: string;
+  created_at: string;
+}
 
 const { width } = Dimensions.get('window');
 const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
@@ -78,6 +88,10 @@ const ProfileDetailsScreen: React.FC = () => {
   const [leftColumn, setLeftColumn] = useState<Post[]>([]);
   const [rightColumn, setRightColumn] = useState<Post[]>([]);
   const [isLiked, setIsLiked] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Add a flag to track if checkIfLiked is already running
+  const isCheckingLikeRef = React.useRef(false);
 
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, TOTAL_HEADER_HEIGHT],
@@ -98,9 +112,35 @@ const ProfileDetailsScreen: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchProfile();
-    checkIfLiked();
-  }, [userId]);
+    if (userId) {
+      // We want this to load on first mount or if userId changes
+      // This is important data for the profile page, so we'll load it immediately
+      // But we won't have it auto-refresh on auth changes
+      fetchProfile();
+
+      // Reset flag before checking
+      isCheckingLikeRef.current = false;
+
+      // We'll only check likes on initial load
+      // For refreshed data, user must pull to refresh
+      checkIfLiked();
+
+      // Add a timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        if (isLoading) {
+          console.log('ProfileDetails timeout - forcing exit from loading state');
+          setIsLoading(false);
+          setErrorMessage('Loading timed out, try refreshing');
+        }
+      }, 10000);
+
+      return () => clearTimeout(timeout);
+    } else {
+      console.error('No userId provided to ProfileDetailsScreen');
+      setIsLoading(false);
+      setErrorMessage('No user ID provided');
+    }
+  }, [userId]); // Only depends on userId, not auth state
 
   useEffect(() => {
     // Pre-calculate image heights
@@ -169,6 +209,23 @@ const ProfileDetailsScreen: React.FC = () => {
     try {
       setIsLoading(true);
 
+      if (!userId) {
+        console.error('No userId provided for profile fetch');
+        setIsLoading(false);
+        setErrorMessage('Missing user ID');
+        return;
+      }
+
+      // Check if we're dealing with a valid UUID before querying
+      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
+      if (!isValidUuid) {
+        console.log('Invalid UUID format for userId:', userId);
+        setIsLoading(false);
+        setErrorMessage('Invalid user ID format');
+        return;
+      }
+
       // Fetch user profile
       const { data: userData, error: userError } = await supabase
         .from('profiles')
@@ -177,22 +234,55 @@ const ProfileDetailsScreen: React.FC = () => {
         .single();
 
       if (userError) {
+        // Log detailed error for debugging
+        console.error('Error fetching profile:', userError);
+
         // If user not found, they might be unregistered
         // Check unregistered_contacts table
         const { data: unregisteredData, error: unregisteredError } = await supabase
           .from('unregistered_contacts')
-          .select('name, phone')
+          .select('id, name, phone, user_id, created_at')
           .eq('id', userId)
           .single();
 
         if (unregisteredError) {
           console.error('Error fetching unregistered contact:', unregisteredError);
-          throw unregisteredError;
+
+          // Last attempt: Check if this is a contact by phone number
+          // This handles cases where we have a contact_user_id but not a direct UUID
+          if (userError.code === 'PGRST116' && /^\+\d+$/.test(userId)) {
+            // If userId looks like a phone number, try to find it in unregistered contacts
+            const { data: phoneData, error: phoneError } = await supabase
+              .from('unregistered_contacts')
+              .select('id, name, phone, user_id, created_at')
+              .eq('phone', userId)
+              .single();
+
+            if (!phoneError && phoneData) {
+              // Create a placeholder user with the unregistered contact's info
+              const placeholderUser: User = {
+                ...DEFAULT_PLACEHOLDER_USER,
+                id: phoneData.id,
+                name: phoneData.name,
+                phone: phoneData.phone,
+              };
+
+              setUser(placeholderUser);
+              setPosts([]); // No posts for unregistered users
+              setIsLoading(false);
+              return;
+            }
+          }
+
+          setErrorMessage('Unable to find user profile');
+          setIsLoading(false);
+          return;
         }
 
         // Create a placeholder user with the unregistered contact's info
-        const placeholderUser = {
+        const placeholderUser: User = {
           ...DEFAULT_PLACEHOLDER_USER,
+          id: unregisteredData.id,
           name: unregisteredData.name,
           phone: unregisteredData.phone,
         };
@@ -203,10 +293,18 @@ const ProfileDetailsScreen: React.FC = () => {
         return;
       }
 
+      setUser(userData);
+      setErrorMessage(null); // Clear any previous errors
+
       // Get contact name if this is an unregistered user
       if (userData.phone) {
-        const contactName = await getContactName(userData.phone);
-        setDisplayName(contactName || userData.username || 'Unknown User');
+        try {
+          const contactName = await getContactName(userData.phone);
+          setDisplayName(contactName || userData.username || 'Unknown User');
+        } catch (error) {
+          console.error('Error getting contact name:', error);
+          setDisplayName(userData.username || 'Unknown User');
+        }
       }
 
       // User exists, fetch their photos
@@ -216,41 +314,84 @@ const ProfileDetailsScreen: React.FC = () => {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (photosError) throw photosError;
-
-      setUser(userData as User);
-      setPosts(photosData as Post[]);
-
-      // Prefetch all images in the background
-      await prefetchImages(photosData as Post[]);
-
-      // Also prefetch the profile picture if it exists
-      if (userData.profile_picture_url) {
-        await Image.prefetch(userData.profile_picture_url);
+      if (photosError) {
+        console.error('Error fetching photos:', photosError);
+        setErrorMessage('Failed to load user photos');
+      } else {
+        setPosts(photosData || []);
+        console.log(`Fetched ${photosData?.length || 0} photos for user ${userId}`);
       }
     } catch (error) {
-      console.error('Error fetching user data:', error);
-      Alert.alert('Error', 'Failed to load profile data');
+      console.error('Error in fetchProfile:', error);
+      setErrorMessage('An unexpected error occurred');
     } finally {
+      // Always exit loading state
       setIsLoading(false);
     }
   };
 
   const checkIfLiked = async () => {
-    try {
-      if (!currentUserProfile?.id) return;
+    // If already checking, don't start another check
+    if (isCheckingLikeRef.current) {
+      return;
+    }
 
-      const { data, error } = await supabase
+    // Set flag to prevent duplicate runs
+    isCheckingLikeRef.current = true;
+
+    try {
+      // Get authenticated user ID from context or storage
+      let currentUserID = authUser?.id;
+
+      if (!currentUserID) {
+        // Try getting user ID from AsyncStorage
+        const storedProfileId = await AsyncStorage.getItem('profile_id');
+
+        if (!storedProfileId) {
+          console.log('Not authenticated, skipping like check');
+          isCheckingLikeRef.current = false;
+          return;
+        }
+
+        currentUserID = storedProfileId;
+      }
+
+      if (!userId) {
+        console.log('No target user ID, skipping like check');
+        isCheckingLikeRef.current = false;
+        return;
+      }
+
+      // Check if we're dealing with a valid UUID before querying
+      // This helps prevent the "invalid input syntax for type uuid" error
+      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
+      if (!isValidUuid) {
+        console.log('Invalid UUID format for userId:', userId);
+        isCheckingLikeRef.current = false;
+        return;
+      }
+
+      // Check if current user has liked the profile user
+      const { data: likeData, error: likeError } = await supabase
         .from('likes')
-        .select('*')
-        .eq('liker_id', currentUserProfile.id)
+        .select('id')
+        .eq('liker_id', currentUserID)
         .eq('liked_id', userId)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
-      setIsLiked(!!data);
+      if (likeError && likeError.code !== 'PGRST116') {
+        console.error('Error checking if liked:', likeError);
+        isCheckingLikeRef.current = false;
+        return;
+      }
+
+      setIsLiked(!!likeData);
     } catch (error) {
-      console.error('Error checking like status:', error);
+      console.error('Error in checkIfLiked:', error);
+    } finally {
+      // Always reset the flag when done
+      isCheckingLikeRef.current = false;
     }
   };
 
@@ -372,23 +513,63 @@ const ProfileDetailsScreen: React.FC = () => {
   };
 
   const handleLikeUnregistered = async () => {
-    if (!user) return;
+    if (!user || !user.phone) {
+      console.error('Cannot like user: Missing user or phone number');
+      Alert.alert('Error', 'Cannot like this user (missing contact information)');
+      return;
+    }
+
+    // Ensure we have a valid user ID from auth context or AsyncStorage
+    let currentUserId = authUser?.id;
+    if (!currentUserId) {
+      try {
+        const storedProfileId = await AsyncStorage.getItem('profile_id');
+        if (storedProfileId) {
+          currentUserId = storedProfileId;
+        } else {
+          console.error('Cannot like user: Not authenticated');
+          Alert.alert('Error', 'You need to be logged in to like users');
+          return;
+        }
+      } catch (error) {
+        console.error('Error retrieving profile ID:', error);
+        Alert.alert('Error', 'Failed to verify your account');
+        return;
+      }
+    }
+
+    // Validate phone number format
+    if (!/^\+\d+$/.test(user.phone)) {
+      console.error('Invalid phone number format:', user.phone);
+      Alert.alert('Error', 'Invalid phone number format for this contact');
+      return;
+    }
 
     try {
-      // Store the like in the database
+      // Store the like in the database with proper fields and types
+      const likeData = {
+        user_id: currentUserId,
+        phone: user.phone,
+        created_at: new Date().toISOString()
+      };
+
+      console.log('Inserting unregistered like:', likeData);
+
       const { error: likeError } = await supabase
         .from('unregistered_likes')
-        .insert([{
-          user_id: authUser?.id,
-          phone: user.phone,
-          created_at: new Date().toISOString()
-        }]);
+        .insert([likeData]);
 
-      if (likeError) throw likeError;
+      if (likeError) {
+        console.error('Database error liking unregistered user:', likeError);
+        throw likeError;
+      }
 
       // Send SMS invite
       const { data: response, error: smsError } = await supabase.functions.invoke('send-invite', {
-        body: { phone: user.phone, fromUserName: authUser?.name || 'Someone' }
+        body: {
+          phone: user.phone,
+          fromUserName: authUser?.name || 'Someone'
+        }
       });
 
       if (smsError) {
@@ -399,6 +580,9 @@ const ProfileDetailsScreen: React.FC = () => {
 
       if (response?.success) {
         Alert.alert('Success', `Liked and invited ${user.name} to join doggo!`);
+
+        // Update UI state to show we've liked this user
+        setIsLiked(true);
       } else {
         Alert.alert('Partial Success', 'Like recorded but failed to send invite message.');
       }

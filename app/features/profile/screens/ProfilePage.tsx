@@ -20,13 +20,14 @@ import {
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { ProfileStackParamList, User } from '@navigation/types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { supabase } from '@services/supabase';
+import { supabase, clerkIdToUuid } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
 import Feather from 'react-native-vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, spacing, typography, layout, shadows } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { optimizeImage } from '../../../utils/imageOptimizer';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Photo {
   id: string;
@@ -144,7 +145,23 @@ const ProfilePage: React.FC = () => {
   const fetchUserAndPosts = async () => {
     try {
       setLoading(true);
-      if (!authUser?.id) return;
+
+      // Get user ID from multiple sources
+      let userId = authUser?.id;
+
+      // If authUser is not available, try from AsyncStorage
+      if (!userId) {
+        const clerkId = await AsyncStorage.getItem('clerk_user_id');
+        const supabaseUuid = await AsyncStorage.getItem('supabase_uuid');
+        userId = supabaseUuid || (clerkId ? clerkIdToUuid(clerkId) : undefined);
+
+        if (!userId) {
+          console.log('No user ID available for profile fetch');
+          setLoading(false);
+          return;
+        }
+        console.log('Using user ID from AsyncStorage:', userId);
+      }
 
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -165,7 +182,7 @@ const ProfilePage: React.FC = () => {
             user_id
           )
         `)
-        .eq('clerk_id', authUser.id)
+        .eq('clerk_id', userId)
         .single();
 
       if (profileError) throw profileError;
@@ -192,6 +209,39 @@ const ProfilePage: React.FC = () => {
   useEffect(() => {
     if (authUser?.id) {
       fetchUserAndPosts();
+    } else {
+      // Try to use saved credentials
+      const checkStoredProfile = async () => {
+        try {
+          const clerkId = await AsyncStorage.getItem('clerk_user_id');
+          const supabaseUuid = await AsyncStorage.getItem('supabase_uuid');
+          const profileId = await AsyncStorage.getItem('profile_id');
+
+          if (profileId || supabaseUuid || clerkId) {
+            console.log('Found stored credentials, fetching profile');
+            fetchUserAndPosts();
+          } else {
+            // No stored credentials, no point in loading
+            console.log('No stored credentials, skipping profile fetch');
+            setLoading(false);
+          }
+        } catch (error) {
+          console.error('Error checking stored profile:', error);
+          setLoading(false);
+        }
+      };
+
+      checkStoredProfile();
+
+      // Add a timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        if (loading) {
+          console.log('Profile load timeout - forcing exit from loading state');
+          setLoading(false);
+        }
+      }, 10000);
+
+      return () => clearTimeout(timeout);
     }
   }, [authUser?.id]);
 
@@ -475,14 +525,23 @@ const ProfilePage: React.FC = () => {
             <View style={styles.scrollableHeader}>
               <View style={styles.profileSection}>
                 <View style={styles.profileHeader}>
-                  <View style={styles.profileImageContainer}>
+                  <TouchableOpacity
+                    style={styles.profileImageContainer}
+                    onPress={handleProfileImagePress}
+                    activeOpacity={0.7}
+                  >
                     <Image
                       source={{
                         uri: profile?.profile_picture_url || 'https://via.placeholder.com/80'
                       }}
                       style={styles.profileImage}
                     />
-                  </View>
+                    {profile?.id === authUser?.id && (
+                      <View style={styles.profileImageOverlay}>
+                        <Feather name="camera" size={20} color={colors.background} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
                   <View style={styles.userInfo}>
                     <Text style={styles.name}>{profile?.name}</Text>
                     {profile?.bio && (
@@ -742,6 +801,15 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: typography.body.fontSize,
     fontWeight: '600',
+  },
+  profileImageOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

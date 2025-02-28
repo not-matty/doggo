@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     View,
     TextInput,
@@ -7,6 +7,7 @@ import {
     Text,
     RefreshControl,
     ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -19,6 +20,7 @@ import PhotoViewer from '@components/common/PhotoViewer';
 import PhotoGrid from '@components/common/PhotoGrid';
 import ProfileHeader from '@components/profile/ProfileHeader';
 import debounce from 'lodash/debounce';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type SearchScreenNavigationProp = StackNavigationProp<ProfileStackParamList>;
 
@@ -32,37 +34,105 @@ const SearchScreen = () => {
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+    // Add function to ensure data fetching works when the component first mounts
+    useEffect(() => {
+        // If we have a profile already, just store the ID but don't fetch data
+        if (currentProfile?.id) {
+            setCurrentUserId(currentProfile.id);
+            return;
+        }
+
+        // Check if we have a profile ID in AsyncStorage
+        const checkProfileStorage = async () => {
+            try {
+                const profileId = await AsyncStorage.getItem('profile_id');
+                if (profileId) {
+                    console.log('Search: Profile ID found in AsyncStorage:', profileId);
+                    setCurrentUserId(profileId);
+                    // No automatic data fetching here - we'll wait for user search
+                }
+            } catch (error) {
+                console.error('Error checking profile storage:', error);
+            }
+        };
+
+        checkProfileStorage();
+    }, [currentProfile?.id]);
 
     const searchUsers = async (query: string) => {
         if (!query.trim()) {
             setSearchResults([]);
+            setLoading(false);
             return;
         }
 
         try {
             setLoading(true);
+
+            // Make sure we have a valid profile ID for any related queries
+            if (!currentUserId && currentProfile?.id) {
+                setCurrentUserId(currentProfile.id);
+            }
+
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
                 .or(`username.ilike.%${query}%,name.ilike.%${query}%`)
                 .limit(10);
 
-            if (error) throw error;
-            setSearchResults(data as User[]);
+            if (error) {
+                console.error('Error searching users:', error);
+                Alert.alert('Search Error', 'Failed to search users. Please try again.');
+                setLoading(false);
+                return;
+            }
+
+            setSearchResults(data as User[] || []);
+            console.log(`Found ${data?.length || 0} users matching "${query}"`);
 
             // Fetch photos for each user
-            data?.forEach(user => {
-                fetchUserPhotos(user.id);
-            });
+            if (data && data.length > 0) {
+                // Use Promise.all for parallel fetching
+                // Filter out any potentially invalid IDs first
+                const validUserIds = data
+                    .filter(user => !!user.id)
+                    .filter(user => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id))
+                    .map(user => user.id);
+
+                await Promise.all(validUserIds.map(id => fetchUserPhotos(id)));
+            }
         } catch (error) {
             console.error('Error searching users:', error);
+            // Set empty results to avoid UI blocking
+            setSearchResults([]);
         } finally {
+            // Always exit loading state
             setLoading(false);
         }
     };
 
     const fetchUserPhotos = async (userId: string) => {
+        if (!userId) {
+            console.error('fetchUserPhotos: Undefined user ID detected');
+            return;
+        }
+
+        // Validate UUID format to prevent database errors
+        const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+        if (!isValidUuid) {
+            console.error(`Invalid UUID format for userId: ${userId}`);
+            return;
+        }
+
         try {
+            // Check if we already have the photos for this user
+            if (userPhotos[userId] && userPhotos[userId].length > 0) {
+                return;
+            }
+
+            console.log(`Fetching photos for user ID: ${userId}`);
             const { data, error } = await supabase
                 .from('photos')
                 .select('*')
@@ -70,13 +140,20 @@ const SearchScreen = () => {
                 .order('created_at', { ascending: false })
                 .limit(6);
 
-            if (error) throw error;
+            if (error) {
+                console.error('Error fetching user photos:', error);
+                return; // Continue execution rather than throwing
+            }
+
+            // Set photos even if empty array
             setUserPhotos(prev => ({
                 ...prev,
-                [userId]: data as Photo[],
+                [userId]: data as Photo[] || [],
             }));
+            console.log(`Fetched ${data?.length || 0} photos for user ${userId}`);
         } catch (error) {
             console.error('Error fetching user photos:', error);
+            // Don't block the UI on photo error
         }
     };
 
@@ -87,6 +164,14 @@ const SearchScreen = () => {
 
     const handleSearchChange = (text: string) => {
         setSearchQuery(text);
+
+        // If text is empty, clear results and exit loading state
+        if (!text.trim()) {
+            setSearchResults([]);
+            setLoading(false);
+            return;
+        }
+
         debouncedSearch(text);
     };
 

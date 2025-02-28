@@ -204,23 +204,97 @@ const RegisterScreen: React.FC = () => {
    */
   const createOrUpdateProfile = async (clerkId: string, phone: string, name: string, username: string) => {
     try {
+      // First check if we already have a profile ID stored
+      const existingProfileId = await AsyncStorage.getItem('profile_id');
+      if (existingProfileId) {
+        console.log('Using existing profile ID:', existingProfileId);
+        return existingProfileId;
+      }
+
       // Import the UUID conversion function
       const { clerkIdToUuid } = await import('@services/supabase');
-      
+
       // Convert Clerk ID to UUID
       const clerkUuid = clerkIdToUuid(clerkId);
       console.log('Creating profile with Clerk ID:', clerkId);
       console.log('Converted to UUID:', clerkUuid);
-      
+
       // Store these for later use
       await AsyncStorage.setItem('clerk_user_id', clerkId);
       await AsyncStorage.setItem('supabase_uuid', clerkUuid);
-      
-      // Create profile directly (not through RPC initially)
+
+      // First check if profile already exists with this clerk_id
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id, name, username, phone')
+        .eq('clerk_id', clerkUuid)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('Error checking if profile exists:', fetchError);
+      }
+
+      if (existingProfile) {
+        console.log('Profile already exists with this clerk_id, updating:', existingProfile.id);
+        // Update the existing profile
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            name,
+            username: username.toLowerCase(),
+            phone,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingProfile.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+
+        // Store the profile ID
+        await AsyncStorage.setItem('profile_id', updatedProfile.id);
+        return updatedProfile.id;
+      }
+
+      // If no profile exists by clerk_id, check by phone number as fallback
+      const { data: phoneProfile, error: phoneError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone', phone)
+        .single();
+
+      if (phoneError && phoneError.code !== 'PGRST116') {
+        console.error('Error checking profile by phone:', phoneError);
+      }
+
+      if (phoneProfile) {
+        console.log('Found profile by phone, updating with clerk_id:', phoneProfile.id);
+        // Update existing profile with new clerk_id
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            clerk_id: clerkUuid,
+            name,
+            username: username.toLowerCase(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', phoneProfile.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+
+        // Store the profile ID
+        await AsyncStorage.setItem('profile_id', updatedProfile.id);
+        return updatedProfile.id;
+      }
+
+      // Create a new profile if none exists
+      console.log('Creating new profile with clerk_id:', clerkUuid);
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
         .insert({
-          clerk_id: clerkUuid,  // Store the UUID version of clerk_id
+          clerk_id: clerkUuid,
           name,
           username: username.toLowerCase(),
           phone,
@@ -229,39 +303,14 @@ const RegisterScreen: React.FC = () => {
         })
         .select()
         .single();
-  
+
       if (insertError) {
-        // If insert fails, check if it's because profile already exists
-        if (insertError.code === '23505') { // Unique violation
-          // Try to update instead
-          const { data: existingProfile, error: fetchError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('clerk_id', clerkUuid)
-            .single();
-            
-          if (fetchError) throw fetchError;
-          
-          // Update the existing profile
-          const { data: updatedProfile, error: updateError } = await supabase
-            .from('profiles')
-            .update({
-              name,
-              username: username.toLowerCase(),
-              phone,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingProfile.id)
-            .select()
-            .single();
-            
-          if (updateError) throw updateError;
-          return updatedProfile.id;
-        } else {
-          throw insertError;
-        }
+        console.error('Error creating new profile:', insertError);
+        throw insertError;
       }
-      
+
+      // Store the profile ID
+      await AsyncStorage.setItem('profile_id', newProfile.id);
       return newProfile.id;
     } catch (error) {
       console.error('Error in createOrUpdateProfile:', error);
@@ -287,14 +336,25 @@ const RegisterScreen: React.FC = () => {
         throw new Error('Failed to create user or session');
       }
 
+      // Mark this as a freshly processed Clerk user to avoid redundant checks
+      await AsyncStorage.setItem('last_profile_check', JSON.stringify({
+        userId: result.createdUserId,
+        timestamp: Date.now()
+      }));
+
       // Create or update the Supabase profile
       console.log('Creating/updating Supabase profile for user:', result.createdUserId);
-      await createOrUpdateProfile(
+      const profileId = await createOrUpdateProfile(
         result.createdUserId,
         phone,
         name,
         username.toLowerCase()
       );
+
+      // Store the profile ID for later use
+      if (profileId) {
+        await AsyncStorage.setItem('profile_id', profileId);
+      }
 
       // Set the session active
       await setActive!({ session: result.createdSessionId });

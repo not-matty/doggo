@@ -23,17 +23,46 @@ import { AuthContext } from '@context/AuthContext';
 import { colors, spacing, typography, layout } from '@styles/theme';
 import { useNavigation } from '@react-navigation/native';
 import { optimizeImage } from '../../../utils/imageOptimizer';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AddPhotoScreen: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const { user } = useContext(AuthContext);
   const navigation = useNavigation();
 
   useEffect(() => {
     openImagePicker();
-  }, []);
+
+    // Check for user ID from context or AsyncStorage
+    const checkUserId = async () => {
+      if (user?.id) {
+        setUserId(user.id);
+        return;
+      }
+
+      try {
+        const storedProfileId = await AsyncStorage.getItem('profile_id');
+        if (storedProfileId) {
+          console.log('Using profile ID from AsyncStorage:', storedProfileId);
+          setUserId(storedProfileId);
+        } else {
+          console.log('No user ID available, uploads will be disabled');
+          Alert.alert(
+            'Authentication Required',
+            'You need to be logged in to upload photos.',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+        }
+      } catch (error) {
+        console.error('Error retrieving profile ID:', error);
+      }
+    };
+
+    checkUserId();
+  }, [user?.id]);
 
   const openImagePicker = async () => {
     try {
@@ -71,7 +100,13 @@ const AddPhotoScreen: React.FC = () => {
   };
 
   const handleUpload = async () => {
-    if (!selectedImage || !user?.id) return;
+    const uploadUserId = userId || user?.id;
+
+    if (!selectedImage || !uploadUserId) {
+      Alert.alert('Error', 'Unable to upload. Please try again after signing in.');
+      navigation.goBack();
+      return;
+    }
 
     setUploading(true);
     try {
@@ -83,7 +118,7 @@ const AddPhotoScreen: React.FC = () => {
       });
 
       const fileExt = optimizedImage.uri.split('.').pop();
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const fileName = `${uploadUserId}-${Date.now()}.${fileExt}`;
 
       // Create FormData for the image
       const formData = new FormData();
@@ -117,7 +152,7 @@ const AddPhotoScreen: React.FC = () => {
       const { error: insertError } = await supabase
         .from('photos')
         .insert([{
-          user_id: user.id,
+          user_id: uploadUserId,
           url: urlData.publicUrl,
           caption: caption.trim() || null,
           created_at: new Date().toISOString()

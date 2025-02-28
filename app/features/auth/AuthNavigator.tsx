@@ -9,31 +9,11 @@ import VerifyOTPScreen from './screens/VerifyOTPScreen';
 import CompleteProfileScreen from './screens/CompleteProfileScreen';
 import WelcomeScreen from './screens/WelcomeScreen';
 import { colors } from '@styles/theme';
-import { useAuth } from '@clerk/clerk-expo';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '@navigation/types';
 
 const AuthStack = createStackNavigator<AuthStackParamList>();
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
-
 const AuthNavigator: React.FC = () => {
-  const { isSignedIn } = useAuth();
-  const navigation = useNavigation<NavigationProp>();
-
-  // If user is signed in, redirect to main app
-  React.useEffect(() => {
-    if (isSignedIn) {
-      navigation.replace('MainNavigator');
-    }
-  }, [isSignedIn, navigation]);
-
-  // If signed in, return null to prevent flash of auth screens
-  if (isSignedIn) {
-    return null;
-  }
-
+  // The navigation flow is now fully controlled by RootNavigator
   return (
     <AuthStack.Navigator
       screenOptions={{
