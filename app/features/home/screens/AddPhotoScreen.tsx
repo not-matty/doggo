@@ -24,14 +24,18 @@ import { colors, spacing, typography, layout } from '@styles/theme';
 import { useNavigation } from '@react-navigation/native';
 import { optimizeImage } from '../../../utils/imageOptimizer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Camera } from 'expo-camera';
 
 const AddPhotoScreen: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const { user } = useContext(AuthContext);
+  const { user, checkContactsPermission } = useContext(AuthContext);
   const navigation = useNavigation();
+  const [cameraPermission, setCameraPermission] = useState(false);
+  const [mediaLibraryPermission, setMediaLibraryPermission] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
     openImagePicker();
@@ -63,6 +67,20 @@ const AddPhotoScreen: React.FC = () => {
 
     checkUserId();
   }, [user?.id]);
+
+  useEffect(() => {
+    (async () => {
+      // Request camera permissions right away
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setCameraPermission(status === 'granted');
+
+      // Check for media library permissions
+      const { status: mediaStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      setMediaLibraryPermission(mediaStatus === 'granted');
+
+      // Don't request contacts permission immediately, this will happen at an appropriate time
+    })();
+  }, []);
 
   const openImagePicker = async () => {
     try {
@@ -96,6 +114,36 @@ const AddPhotoScreen: React.FC = () => {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to open photo library');
       navigation.goBack();
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    // Before accessing camera or library, check for contacts permission after auth
+    try {
+      if (user) {
+        console.log('Checking contacts permission before adding photo');
+        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${user.id}`);
+        if (hasAuthenticated === 'true') {
+          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${user.id}`);
+          if (hasImportedContacts === 'false') {
+            console.log('User has not imported contacts yet, requesting permission');
+            await checkContactsPermission();
+          } else {
+            console.log('User already has imported contacts, no need to request again');
+          }
+        } else {
+          console.log('User not fully authenticated yet, skipping contacts check');
+        }
+      } else {
+        console.log('No user found, skipping contacts check');
+      }
+
+      // Show modal for photo upload whether or not contacts were imported
+      setModalVisible(true);
+    } catch (error) {
+      console.error('Error checking contacts permission:', error);
+      // Continue with photo upload even if contacts permission check fails
+      setModalVisible(true);
     }
   };
 
@@ -210,7 +258,7 @@ const AddPhotoScreen: React.FC = () => {
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[styles.button, uploading && styles.buttonDisabled]}
-              onPress={handleUpload}
+              onPress={handleAddPhoto}
               disabled={uploading}
             >
               {uploading ? (

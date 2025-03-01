@@ -63,8 +63,10 @@ const LikesScreen: React.FC = () => {
             // Check if we're already authenticated before fetching
             const profileId = await AsyncStorage.getItem('profile_id');
             if (profileId) {
-                fetchMatches();
+                console.log('Found profile ID in storage:', profileId);
+                fetchMatches(profileId);
             } else {
+                console.log('No profile ID found in storage');
                 // Just exit loading state if not authenticated
                 setLoading(false);
             }
@@ -83,23 +85,28 @@ const LikesScreen: React.FC = () => {
         return () => clearTimeout(timeout);
     }, []);
 
-    const fetchMatches = async () => {
+    const fetchMatches = async (profileId?: string) => {
         if (loading && !refreshing) return; // Prevent multiple simultaneous calls
 
         try {
             setLoading(true);
 
-            // Ensure we have a valid user ID
-            if (!user?.id) {
-                console.error('fetchMatches: User ID is missing');
+            // Get profile ID either from parameter or AsyncStorage
+            const currentProfileId = profileId || await AsyncStorage.getItem('profile_id');
+
+            // Ensure we have a valid profile ID
+            if (!currentProfileId) {
+                console.error('fetchMatches: Profile ID is missing');
                 setLoading(false);
                 return;
             }
 
+            console.log('Fetching matches for profile ID:', currentProfileId);
+
             // Validate UUID format
-            const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
+            const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentProfileId);
             if (!isValidUuid) {
-                console.error(`Invalid UUID format for user ID: ${user.id}`);
+                console.error(`Invalid UUID format for profile ID: ${currentProfileId}`);
                 setLoading(false);
                 return;
             }
@@ -108,7 +115,7 @@ const LikesScreen: React.FC = () => {
             const { data: sentLikes, error: sentLikesError } = await supabase
                 .from('likes')
                 .select('liked_id')
-                .eq('liker_id', user.id);
+                .eq('liker_id', currentProfileId);
 
             if (sentLikesError) {
                 console.error('Error fetching sent likes:', sentLikesError);
@@ -119,7 +126,7 @@ const LikesScreen: React.FC = () => {
             const { data: receivedLikes, error: receivedLikesError } = await supabase
                 .from('likes')
                 .select('liker_id')
-                .eq('liked_id', user.id);
+                .eq('liked_id', currentProfileId);
 
             if (receivedLikesError) {
                 console.error('Error fetching received likes:', receivedLikesError);
@@ -129,6 +136,8 @@ const LikesScreen: React.FC = () => {
             // Find mutual likes (matches)
             const sentLikeIds = sentLikes?.map(like => like.liked_id) || [];
             const receivedLikeIds = receivedLikes?.map(like => like.liker_id) || [];
+
+            console.log(`Found ${sentLikeIds.length} sent likes and ${receivedLikeIds.length} received likes`);
 
             // Filter for only valid UUIDs
             const validSentLikeIds = sentLikeIds
@@ -141,6 +150,7 @@ const LikesScreen: React.FC = () => {
 
             // Find the intersection (mutual likes)
             const matchIds = validSentLikeIds.filter(id => validReceivedLikeIds.includes(id));
+            console.log(`Found ${matchIds.length} mutual matches`);
 
             if (matchIds.length === 0) {
                 setMatches([]);
@@ -151,8 +161,8 @@ const LikesScreen: React.FC = () => {
             // Fetch user details for all matches
             const { data: matchedUsers, error: matchedUsersError } = await supabase
                 .from('profiles')
-                .select('*')
-                .in('clerk_id', matchIds);
+                .select('id, name, username, profile_picture_url')
+                .in('id', matchIds);
 
             if (matchedUsersError) {
                 console.error('Error fetching matched users:', matchedUsersError);
@@ -160,18 +170,18 @@ const LikesScreen: React.FC = () => {
             }
 
             // Format the matches
-            const formattedMatches = (matchedUsers || []).map(user => {
+            const formattedMatches = (matchedUsers || []).map(matchedUser => {
                 // Find the matching like to get the timestamp
-                const like = receivedLikes?.find(like => like.liker_id === user.clerk_id);
+                const like = receivedLikes?.find(like => like.liker_id === matchedUser.id);
 
                 return {
-                    id: user.clerk_id,
+                    id: matchedUser.id,
                     matched_at: like ? new Date().toISOString() : new Date().toISOString(),
                     user: {
-                        id: user.id,
-                        name: user.name,
-                        username: user.username,
-                        profile_picture_url: user.profile_picture_url
+                        id: matchedUser.id,
+                        name: matchedUser.name,
+                        username: matchedUser.username,
+                        profile_picture_url: matchedUser.profile_picture_url
                     }
                 };
             });
@@ -202,14 +212,17 @@ const LikesScreen: React.FC = () => {
             return;
         }
 
-        // If it's the current user's profile, navigate directly to the Profile tab
-        if (user?.id === userId) {
-            // @ts-ignore - Navigating to root tab
-            navigation.navigate('Profile');
-        } else {
-            // If it's another user's profile, navigate to their ProfileDetails
-            navigation.navigate('ProfileDetails', { userId });
-        }
+        // Get current user's profile ID from AsyncStorage
+        AsyncStorage.getItem('profile_id').then(profileId => {
+            // If it's the current user's profile, navigate directly to the Profile tab
+            if (profileId === userId) {
+                // @ts-ignore - Navigating to root tab
+                navigation.navigate('Profile');
+            } else {
+                // If it's another user's profile, navigate to their ProfileDetails
+                navigation.navigate('ProfileDetails', { userId });
+            }
+        });
     };
 
     const renderMatch = ({ item }: { item: Match }) => (

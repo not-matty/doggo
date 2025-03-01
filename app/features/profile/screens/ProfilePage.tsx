@@ -16,6 +16,7 @@ import {
   Animated,
   Platform,
   StatusBar,
+  Linking,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { ProfileStackParamList, User } from '@navigation/types';
@@ -75,7 +76,7 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Photo>);
 const ProfilePage: React.FC = () => {
   const route = useRoute<ProfilePageRouteProp>();
   const navigation = useNavigation<ProfilePageNavigationProp>();
-  const { user: authUser, signOut } = useContext(AuthContext);
+  const { user: authUser, signOut, checkContactsPermission } = useContext(AuthContext);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,12 +272,44 @@ const ProfilePage: React.FC = () => {
     if (!profile || profile.id !== authUser?.id) return;
 
     try {
+      // Check for contacts permission if this is an appropriate time
+      if (authUser) {
+        console.log('Checking contacts permission status before updating profile picture');
+        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${authUser.id}`);
+        if (hasAuthenticated === 'true') {
+          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${authUser.id}`);
+          if (hasImportedContacts === 'false') {
+            console.log('User hasn\'t imported contacts yet, requesting permission');
+            await checkContactsPermission();
+          } else {
+            console.log('User already has imported contacts, no need to request again');
+          }
+        } else {
+          console.log('User not fully authenticated yet, skipping contacts check');
+        }
+      }
+
+      // Request media library permissions
+      console.log('Requesting media library permissions');
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
-        Alert.alert('Permission needed', 'Please grant permission to access your photos');
+        console.log('Media library permission denied');
+        Alert.alert(
+          'Permission Needed',
+          'Please grant permission to access your photos to update your profile picture',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
         return;
       }
 
+      // Launch image picker after permissions are granted
+      console.log('Launching image picker');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -284,17 +317,36 @@ const ProfilePage: React.FC = () => {
         quality: 1,
       });
 
-      if (!result.canceled) {
-        setUploadingImage(true);
+      if (result.canceled) {
+        console.log('User cancelled image picker');
+        return;
+      }
 
-        // Optimize the image
-        const optimizedImage = await optimizeImage(result.assets[0].uri, {
+      if (!result.assets || result.assets.length === 0) {
+        console.log('No image selected');
+        return;
+      }
+
+      // Show loading state
+      setUploadingImage(true);
+
+      // Optimize the image
+      const selectedImageUri = result.assets[0].uri;
+      console.log('Selected image URI:', selectedImageUri);
+
+      try {
+        console.log('Optimizing image...');
+        const optimizedImage = await optimizeImage(selectedImageUri, {
           isProfilePicture: true,
           quality: 0.8
         });
 
-        const fileExt = optimizedImage.uri.split('.').pop();
+        console.log('Image optimized successfully:', optimizedImage);
+
+        const fileExt = optimizedImage.uri.split('.').pop() || 'jpg';
         const fileName = `${profile.id}/${Date.now()}.${fileExt}`;
+
+        console.log('Preparing to upload:', fileName);
 
         // Create FormData for the image
         const formData = new FormData();
@@ -306,16 +358,29 @@ const ProfilePage: React.FC = () => {
 
         // Delete old profile picture if exists
         if (profile.profile_picture_url) {
-          const oldFileName = profile.profile_picture_url.split('/').pop();
-          if (oldFileName) {
-            await supabase.storage
-              .from('profile-pictures')
-              .remove([`${profile.id}/${oldFileName}`]);
+          try {
+            const oldImagePath = profile.profile_picture_url.split('/').pop();
+            const oldFilePath = `${profile.id}/${oldImagePath}`;
+            if (oldImagePath) {
+              console.log('Deleting old profile picture:', oldFilePath);
+              const { error: removeError } = await supabase.storage
+                .from('profile-pictures')
+                .remove([oldFilePath]);
+
+              if (removeError) {
+                console.warn('Error removing old profile image (continuing anyway):', removeError);
+              } else {
+                console.log('Old profile picture deleted successfully');
+              }
+            }
+          } catch (removeErr: any) {
+            console.warn('Error removing old profile image (continuing anyway):', removeErr);
           }
         }
 
         // Upload to Supabase Storage
-        const { error: uploadError } = await supabase.storage
+        console.log('Uploading to Supabase storage...');
+        const { data: uploadData, error: uploadError } = await supabase.storage
           .from('profile-pictures')
           .upload(fileName, formData);
 
@@ -327,26 +392,37 @@ const ProfilePage: React.FC = () => {
           throw uploadError;
         }
 
+        console.log('Upload successful:', uploadData);
+
         // Get public URL
         const { data: urlData } = supabase.storage
           .from('profile-pictures')
           .getPublicUrl(fileName);
 
-        if (!urlData?.publicUrl) throw new Error('Failed to get public URL');
+        if (!urlData?.publicUrl) {
+          console.error('No public URL returned');
+          throw new Error('Failed to get public URL');
+        }
+
+        console.log('Got public URL:', urlData.publicUrl);
 
         // Update profile
-        const { error: updateError } = await supabase
+        console.log('Updating profile with new picture URL');
+        const { data: updateData, error: updateError } = await supabase
           .from('profiles')
           .update({
             profile_picture_url: urlData.publicUrl,
             updated_at: new Date().toISOString()
           })
-          .eq('id', profile.id);
+          .eq('id', profile.id)
+          .select();
 
         if (updateError) {
           console.error('Profile update error:', updateError);
           throw new Error('Failed to update profile');
         }
+
+        console.log('Profile updated successfully:', updateData);
 
         // Update local state
         setProfile(prev => prev ? {
@@ -356,10 +432,14 @@ const ProfilePage: React.FC = () => {
 
         // Show success message
         Alert.alert('Success', 'Profile picture updated successfully!');
+      } catch (optimizeErr: any) {
+        console.error('Error optimizing or uploading image:', optimizeErr);
+        Alert.alert('Error', `Failed to process image: ${optimizeErr.message || 'Unknown error'}`);
+        throw optimizeErr;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating profile picture:', err);
-      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+      Alert.alert('Error', `Failed to update profile picture: ${err.message || 'Please try again'}`);
     } finally {
       setUploadingImage(false);
     }

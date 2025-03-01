@@ -26,6 +26,7 @@ type AuthContextType = {
   ) => Promise<void>;
   isUsernameTaken: (username: string) => Promise<boolean>;
   updateProfile: (profile: Partial<User>) => Promise<void>;
+  checkContactsPermission: () => Promise<boolean>;
 };
 
 export const AuthContext = createContext<AuthContextType>({
@@ -37,6 +38,7 @@ export const AuthContext = createContext<AuthContextType>({
   signUpWithPhone: async () => { },
   isUsernameTaken: async () => false,
   updateProfile: async () => { },
+  checkContactsPermission: async () => false,
 });
 
 type AuthProviderProps = {
@@ -178,133 +180,260 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Modify the importContactsIfFirstLogin function
-  const importContactsIfFirstLogin = async (currentUser: User) => {
+  // Add this new helper function to match contacts with existing users
+  const matchContactsWithUsers = async (currentUser: User, processedContacts: any[]) => {
     try {
-      const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${currentUser.id}`);
-      const lastContactsUpdate = await AsyncStorage.getItem(`lastContactsUpdate_${currentUser.id}`);
-      const now = new Date().getTime();
-      const ONE_DAY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+      console.log('Matching contacts with existing users');
+      // Get all phone numbers from processed contacts
+      const phoneNumbers = processedContacts.map(contact => contact.phone_number);
 
-      // If it's not first login, check if we should update contacts
-      if (hasImportedContacts && lastContactsUpdate) {
-        const timeSinceLastUpdate = now - parseInt(lastContactsUpdate);
-        if (timeSinceLastUpdate < ONE_DAY) {
-          return; // Skip if last update was less than 24 hours ago
+      if (phoneNumbers.length === 0) {
+        console.log('No phone numbers to match');
+        return processedContacts;
+      }
+
+      // Look up profiles that match these phone numbers
+      const { data: matchedProfiles, error } = await supabase
+        .from('profiles')
+        .select('id, phone')
+        .in('phone', phoneNumbers);
+
+      if (error) {
+        console.error('Error matching contacts with profiles:', error);
+        throw error;
+      }
+
+      if (!matchedProfiles || matchedProfiles.length === 0) {
+        console.log('No matching profiles found');
+        return processedContacts;
+      }
+
+      console.log(`Found ${matchedProfiles.length} matching profiles`);
+
+      // Create a map of phone number to profile id for quick lookup
+      const phoneToProfileMap = matchedProfiles.reduce((map, profile) => {
+        if (profile.phone) {
+          map[normalizePhoneNumber(profile.phone)] = profile.id;
         }
-      }
+        return map;
+      }, {} as Record<string, string>);
 
-      // Request permission if first time
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Contacts Access Required',
-          'doggo needs access to your contacts to help you connect with friends. You can enable this in your settings.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            {
-              text: 'Open Settings',
-              onPress: () => Linking.openSettings()
-            }
-          ]
-        );
-        return;
-      }
-
-      // Fetch contacts from device
-      const { data: deviceContacts } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers],
+      // Update processed contacts with contact_user_id where there's a match
+      const updatedContacts = processedContacts.map(contact => {
+        const matchedProfileId = phoneToProfileMap[contact.phone_number];
+        if (matchedProfileId && matchedProfileId !== currentUser.id) {
+          return {
+            ...contact,
+            contact_user_id: matchedProfileId
+          };
+        }
+        return contact;
       });
 
-      if (deviceContacts.length === 0) {
-        console.log('No contacts found');
+      console.log(`Updated ${updatedContacts.filter(c => c.contact_user_id).length} contacts with user IDs`);
+      return updatedContacts;
+    } catch (error) {
+      console.error('Error in matchContactsWithUsers:', error);
+      // Return original contacts if there's an error
+      return processedContacts;
+    }
+  };
+
+  // Update the refreshContactsOnLogin function to use the matchContactsWithUsers function
+  const refreshContactsOnLogin = async (currentUser: User) => {
+    try {
+      // Mark that the user has authenticated successfully
+      await AsyncStorage.setItem(`hasAuthenticated_${currentUser.id}`, 'true');
+      console.log(`User ${currentUser.id} authenticated, refreshing contacts`);
+
+      // Check current permission status
+      const { status } = await Contacts.getPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Contacts permission not granted, marking as pending');
+        // Mark as pending but don't prompt - we'll do this at a more appropriate time
+        await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'false');
         return;
       }
 
-      // Get existing unregistered contacts for this user
+      console.log('Contacts permission granted, importing contacts');
+      // Permission is granted, fetch and import contacts
+      const { data } = await Contacts.getContactsAsync({
+        fields: [
+          Contacts.Fields.PhoneNumbers,
+          Contacts.Fields.Name,
+          Contacts.Fields.FirstName,
+          Contacts.Fields.LastName,
+        ],
+      });
+
+      if (!data || data.length === 0) {
+        console.log('No contacts found or empty contacts list');
+        await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
+        await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, new Date().getTime().toString());
+        return;
+      }
+
+      console.log(`Found ${data.length} contacts, processing for import`);
+      // Process contacts to extract needed information
+      const processedContacts = data
+        .filter(contact => contact.phoneNumbers && contact.phoneNumbers.length > 0)
+        .map(contact => {
+          // Process each phone number
+          return contact.phoneNumbers?.map(phone => ({
+            user_id: currentUser.id,
+            name: contact.name || 'Unknown',
+            phone_number: normalizePhoneNumber(phone.number || ''),
+            first_name: contact.firstName || '',
+            last_name: contact.lastName || '',
+            imported_at: new Date().toISOString(),
+          })) || [];
+        })
+        .flat()
+        .filter(contact => contact.phone_number.length >= 10); // Ensure valid phone numbers
+
+      if (processedContacts.length === 0) {
+        console.log('No valid contacts found after processing');
+        await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
+        await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, new Date().getTime().toString());
+        return;
+      }
+
+      // Match contacts with existing user profiles
+      const matchedContacts = await matchContactsWithUsers(currentUser, processedContacts);
+
+      console.log(`Saving ${matchedContacts.length} contacts to database`);
+      // Batch insert contacts into database
+      // First, get existing contacts to avoid duplicates
       const { data: existingContacts, error: fetchError } = await supabase
-        .from('unregistered_contacts')
-        .select('phone')
-        .eq('user_id', currentUser.id);
-
-      if (fetchError) throw fetchError;
-
-      // Create a Set of existing phone numbers for faster lookup
-      const existingPhones = new Set(existingContacts?.map(contact => contact.phone) || []);
-      const contactsToProcess = [];
-
-      // Get existing contacts to avoid duplicates
-      const { data: existingRegisteredContacts, error: registeredError } = await supabase
         .from('contacts')
-        .select('contact_user_id')
+        .select('phone_number')
         .eq('user_id', currentUser.id);
 
-      if (registeredError) throw registeredError;
+      if (fetchError) {
+        console.error('Error fetching existing contacts:', fetchError);
+        throw fetchError;
+      }
 
-      const existingContactIds = new Set(existingRegisteredContacts?.map(contact => contact.contact_user_id) || []);
+      // Create a set of existing phone numbers for quick lookup
+      const existingPhoneNumbers = new Set(
+        existingContacts?.map(contact => contact.phone_number) || []
+      );
 
-      for (const contact of deviceContacts) {
-        if (contact.phoneNumbers && contact.phoneNumbers.length > 0) {
-          for (const phone of contact.phoneNumbers) {
-            if (phone.number) {
-              const normalizedPhone = normalizePhoneNumber(phone.number);
+      // Filter out existing contacts
+      const newContacts = matchedContacts.filter(
+        contact => !existingPhoneNumbers.has(contact.phone_number)
+      );
 
-              // Check if this contact is already registered
-              const { data: existingUser } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('phone', normalizedPhone)
-                .single();
+      if (newContacts.length > 0) {
+        console.log(`Inserting ${newContacts.length} new contacts`);
+        // Break into smaller batches to avoid payload size limits
+        const batchSize = 100;
+        for (let i = 0; i < newContacts.length; i += batchSize) {
+          const batch = newContacts.slice(i, i + batchSize);
+          const { error: insertError } = await supabase
+            .from('contacts')
+            .upsert(batch, { onConflict: 'user_id,phone_number' });
 
-              if (existingUser) {
-                // Skip if we already have this contact
-                if (!existingContactIds.has(existingUser.id)) {
-                  // If the contact is a registered user, add to contacts table
-                  const { error: contactError } = await supabase
-                    .from('contacts')
-                    .insert({
-                      user_id: currentUser.id,
-                      contact_user_id: existingUser.id,
-                      created_at: new Date().toISOString()
-                    });
+          if (insertError) {
+            console.error(`Error inserting contacts batch ${i}-${i + batch.length}:`, insertError);
+            throw insertError;
+          }
+        }
+        console.log('Successfully imported contacts');
+      } else {
+        console.log('No new contacts to import');
+      }
 
-                  if (contactError) console.error('Error adding contact:', contactError);
-                }
-              } else if (!existingPhones.has(normalizedPhone)) {
-                // If not registered and not already in unregistered_contacts
-                contactsToProcess.push({
-                  user_id: currentUser.id,
-                  phone: normalizedPhone,
-                  created_at: new Date().toISOString()
-                });
-              }
-            }
+      // Update existing contacts for matches
+      const existingContactsToUpdate = matchedContacts.filter(
+        contact => existingPhoneNumbers.has(contact.phone_number) && contact.contact_user_id
+      );
+
+      if (existingContactsToUpdate.length > 0) {
+        console.log(`Updating ${existingContactsToUpdate.length} existing contacts with user matches`);
+
+        for (const contact of existingContactsToUpdate) {
+          const { error: updateError } = await supabase
+            .from('contacts')
+            .update({
+              contact_user_id: contact.contact_user_id,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', currentUser.id)
+            .eq('phone_number', contact.phone_number);
+
+          if (updateError) {
+            console.error(`Error updating contact match for ${contact.phone_number}:`, updateError);
+            // Continue with other updates even if one fails
           }
         }
       }
 
-      // Process unregistered contacts in smaller batches to avoid conflicts
-      const BATCH_SIZE = 50;
-      for (let i = 0; i < contactsToProcess.length; i += BATCH_SIZE) {
-        const batch = contactsToProcess.slice(i, i + BATCH_SIZE);
-        const { error: insertError } = await supabase
-          .from('unregistered_contacts')
-          .insert(batch)
-          .select();
+      // Mark contacts as imported
+      await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
+      await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, new Date().getTime().toString());
+      return true;
+    } catch (error) {
+      console.error('Error in refreshContactsOnLogin:', error);
+      // Even if there's an error, don't set hasImportedContacts to false if it was true before
+      // This prevents repeated attempts if there's a persistent error
+      return false;
+    }
+  };
 
-        if (insertError) {
-          console.error('Error inserting batch:', insertError);
-          // Continue with next batch even if this one fails
-        }
+  // New function to check contacts permission at appropriate times
+  const checkContactsPermission = async () => {
+    if (!user) return false;
+
+    try {
+      // Check if we've already imported contacts
+      const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${user.id}`);
+
+      // If already imported, no need to check
+      if (hasImportedContacts === 'true') {
+        console.log('Contacts already imported, skipping permission check');
+        return true;
       }
 
-      // Update timestamps
-      await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
-      await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, now.toString());
+      console.log('Checking contacts permission status');
+      // Check current permission status
+      const { status } = await Contacts.getPermissionsAsync();
+      if (status === 'granted') {
+        // Permission already granted, mark as imported
+        console.log('Contacts permission already granted');
+        await AsyncStorage.setItem(`hasImportedContacts_${user.id}`, 'true');
+        await AsyncStorage.setItem(`lastContactsUpdate_${user.id}`, new Date().getTime().toString());
+        return true;
+      }
 
-      console.log(`Processed ${contactsToProcess.length} contacts for user:`, currentUser.id);
+      // Request permission with a clear prompt
+      console.log('Requesting contacts permission');
+      const { status: newStatus } = await Contacts.requestPermissionsAsync();
+      if (newStatus === 'granted') {
+        // Permission granted, mark as imported
+        console.log('Contacts permission granted');
+        await AsyncStorage.setItem(`hasImportedContacts_${user.id}`, 'true');
+        await AsyncStorage.setItem(`lastContactsUpdate_${user.id}`, new Date().getTime().toString());
+        return true;
+      }
+
+      // User denied permission, show friendly explanation
+      console.log('Contacts permission denied, showing explanation alert');
+      Alert.alert(
+        'Find Friends on doggo',
+        'doggo works best when you can connect with friends. Enabling contacts access helps you find people you know who are already using the app.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => Linking.openSettings()
+          }
+        ]
+      );
+      return false;
     } catch (error) {
-      console.error('Error importing contacts:', error);
+      console.error('Error checking contacts permission:', error);
+      return false;
     }
   };
 
@@ -330,8 +459,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const fetchedUser = data as User;
           setUser(fetchedUser);
           console.log('Fetched Profile:', fetchedUser);
-          // Import contacts if this is the first login
-          await importContactsIfFirstLogin(fetchedUser);
+          // Refresh contacts on login
+          await refreshContactsOnLogin(fetchedUser);
         }
       } else {
         console.log('User signed out');
@@ -360,7 +489,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (profile) {
           setUser(profile);
-          await importContactsIfFirstLogin(profile);
+          await refreshContactsOnLogin(profile);
         }
       }
     } catch (error) {
@@ -487,7 +616,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (profile) {
           setUser(profile);
-          await importContactsIfFirstLogin(profile);
+          await refreshContactsOnLogin(profile);
         }
       }
     } catch (error: any) {
@@ -618,6 +747,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             throw new Error(error.message);
           }
         },
+        checkContactsPermission,
       }}
     >
       {children}
