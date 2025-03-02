@@ -13,7 +13,14 @@ export type RootStackParamList = {
   ProfileNavigator: undefined;
   MessagesPeek: undefined;
   MessagesPage: undefined;
-  ProfileDetails: { userId: string };
+  ProfileDetails: {
+    userId: string;
+    placeholderContact?: {
+      name: string;
+      phone_number: string;
+      is_placeholder: boolean;
+    }
+  };
   // Add other Root stack screens or navigators here
 };
 
@@ -24,7 +31,14 @@ export type MainStackParamList = {
   Tabs: undefined;
   AddPhoto: undefined;
   Home: undefined;
-  ProfileDetails: { userId: string };
+  ProfileDetails: {
+    userId: string;
+    placeholderContact?: {
+      name: string;
+      phone_number: string;
+      is_placeholder: boolean;
+    }
+  };
 };
 
 /** 
@@ -55,7 +69,14 @@ export type TabsParamList = {
  */
 export type HomeStackParamList = {
   HomePage: undefined;
-  ProfileDetails: { userId: string };
+  ProfileDetails: {
+    userId: string;
+    placeholderContact?: {
+      name: string;
+      phone_number: string;
+      is_placeholder: boolean;
+    }
+  };
 };
 
 /** 
@@ -63,7 +84,14 @@ export type HomeStackParamList = {
  */
 export type SearchStackParamList = {
   SearchPage: undefined;
-  ProfileDetails: { userId: string };
+  ProfileDetails: {
+    userId: string;
+    placeholderContact?: {
+      name: string;
+      phone_number: string;
+      is_placeholder: boolean;
+    }
+  };
 };
 
 /** 
@@ -79,7 +107,14 @@ export type MessagesStackParamList = {
  */
 export type ProfileStackParamList = {
   ProfilePage: undefined;
-  ProfileDetails: { userId: string };
+  ProfileDetails: {
+    userId: string;
+    placeholderContact?: {
+      name: string;
+      phone_number: string;
+      is_placeholder: boolean;
+    }
+  };
   EditProfile: undefined;
   // Add other Profile stack screens here if needed
 };

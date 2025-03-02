@@ -212,27 +212,30 @@ const ProfileDetailsScreen: React.FC = () => {
   };
 
   const fetchProfile = async () => {
+    console.log('fetchProfile - Starting profile fetch with userId:', userId);
+
+    // Add this early check to avoid unnecessary database calls
+    if (!userId) {
+      console.error('fetchProfile - No userId provided');
+      setErrorMessage('User ID is required');
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate UUID format if not a phone number
+    if (!/^\+\d+$/.test(userId) && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      console.error('fetchProfile - Invalid user ID format:', userId);
+      setErrorMessage('Invalid user ID format');
+      setIsLoading(false);
+      return;
+    }
+
     try {
+      // Set loading at the start of the fetch
       setIsLoading(true);
+      setErrorMessage(null);
+      console.log('fetchProfile - Fetching user with ID:', userId);
 
-      if (!userId) {
-        console.error('No userId provided for profile fetch');
-        setIsLoading(false);
-        setErrorMessage('Missing user ID');
-        return;
-      }
-
-      // Check if we're dealing with a valid UUID before querying
-      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-
-      if (!isValidUuid) {
-        console.log('Invalid UUID format for userId:', userId);
-        setIsLoading(false);
-        setErrorMessage('Invalid user ID format');
-        return;
-      }
-
-      // Fetch user profile
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('*')
@@ -245,6 +248,7 @@ const ProfileDetailsScreen: React.FC = () => {
 
         // If user not found, they might be unregistered
         // Check unregistered_contacts table
+        console.log('fetchProfile - User not found in profiles, checking unregistered_contacts');
         const { data: unregisteredData, error: unregisteredError } = await supabase
           .from('unregistered_contacts')
           .select('id, name, phone, user_id, created_at')
@@ -257,6 +261,7 @@ const ProfileDetailsScreen: React.FC = () => {
           // Last attempt: Check if this is a contact by phone number
           // This handles cases where we have a contact_user_id but not a direct UUID
           if (userError.code === 'PGRST116' && /^\+\d+$/.test(userId)) {
+            console.log('fetchProfile - Attempting to find contact by phone number:', userId);
             // If userId looks like a phone number, try to find it in unregistered contacts
             const { data: phoneData, error: phoneError } = await supabase
               .from('unregistered_contacts')
@@ -265,6 +270,7 @@ const ProfileDetailsScreen: React.FC = () => {
               .single();
 
             if (!phoneError && phoneData) {
+              console.log('fetchProfile - Found unregistered contact by phone:', phoneData);
               // Create a placeholder user with the unregistered contact's info
               const placeholderUser: User = {
                 ...DEFAULT_PLACEHOLDER_USER,
@@ -277,6 +283,8 @@ const ProfileDetailsScreen: React.FC = () => {
               setPosts([]); // No posts for unregistered users
               setIsLoading(false);
               return;
+            } else {
+              console.error('Failed to find user by phone number:', phoneError);
             }
           }
 
@@ -285,6 +293,7 @@ const ProfileDetailsScreen: React.FC = () => {
           return;
         }
 
+        console.log('fetchProfile - Found unregistered contact:', unregisteredData);
         // Create a placeholder user with the unregistered contact's info
         const placeholderUser: User = {
           ...DEFAULT_PLACEHOLDER_USER,
@@ -299,40 +308,44 @@ const ProfileDetailsScreen: React.FC = () => {
         return;
       }
 
-      setUser(userData);
-      setErrorMessage(null); // Clear any previous errors
+      // Success path - we found the profile
+      if (userData) {
+        console.log('fetchProfile - Found user profile:', userData.id);
+        setUser(userData);
 
-      // Get contact name if this is an unregistered user
-      if (userData.phone) {
-        try {
-          const contactName = await getContactName(userData.phone);
-          setDisplayName(contactName || userData.username || 'Unknown User');
-        } catch (error) {
-          console.error('Error getting contact name:', error);
-          setDisplayName(userData.username || 'Unknown User');
+        // Fetch user's posts
+        console.log('fetchProfile - Fetching posts for user:', userData.id);
+        const { data: postsData, error: postsError } = await supabase
+          .from('photos')
+          .select('*')
+          .eq('user_id', userData.id)
+          .order('created_at', { ascending: false });
+
+        if (postsError) {
+          console.error('Error fetching posts:', postsError);
+        } else {
+          console.log(`fetchProfile - Found ${postsData?.length || 0} posts`);
+          setPosts(postsData || []);
+
+          // Start prefetching images for better performance
+          if (postsData && postsData.length > 0) {
+            prefetchImages(postsData);
+          }
         }
-      }
 
-      // User exists, fetch their photos
-      const { data: photosData, error: photosError } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (photosError) {
-        console.error('Error fetching photos:', photosError);
-        setErrorMessage('Failed to load user photos');
+        // Fetch user's liked status
+        await checkIfLiked();
       } else {
-        setPosts(photosData || []);
-        console.log(`Fetched ${photosData?.length || 0} photos for user ${userId}`);
+        console.error('fetchProfile - User data is null despite no error');
+        setErrorMessage('User not found');
       }
     } catch (error) {
-      console.error('Error in fetchProfile:', error);
+      console.error('Unexpected error in fetchProfile:', error);
       setErrorMessage('An unexpected error occurred');
     } finally {
-      // Always exit loading state
+      // Ensure loading state is turned off regardless of outcome
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -403,33 +416,105 @@ const ProfileDetailsScreen: React.FC = () => {
 
   const handleLike = async () => {
     try {
-      if (!currentUserProfile?.id) return;
+      // Check if we have a valid user context or profile
+      if (!contextUser?.id && !currentUserProfile?.id) {
+        Alert.alert('Error', 'You must be logged in to like users.');
+        return;
+      }
+
+      // Use current user profile ID or context user ID
+      const currentUserId = currentUserProfile?.id || contextUser?.id;
+
+      // Make sure the target user ID is valid
+      if (!userId) {
+        console.error('Cannot like: Missing target user ID');
+        return;
+      }
+
+      // Show a loading state
+      setIsLoading(true);
 
       if (isLiked) {
-        // Unlike
+        // Unlike the user
         const { error } = await supabase
           .from('likes')
           .delete()
-          .eq('liker_id', currentUserProfile.id)
+          .eq('liker_id', currentUserId)
           .eq('liked_id', userId);
 
         if (error) throw error;
+
         setIsLiked(false);
+        Alert.alert('Unliked', `You have unliked this user.`);
       } else {
-        // Like
+        // Like the user
         const { error } = await supabase
           .from('likes')
           .insert({
-            liker_id: currentUserProfile.id,
+            liker_id: currentUserId,
             liked_id: userId,
           });
 
         if (error) throw error;
+
         setIsLiked(true);
+
+        // Check if it's a mutual like
+        const { data: mutualLike, error: mutualCheckError } = await supabase
+          .from('likes')
+          .select('id')
+          .eq('liker_id', userId)
+          .eq('liked_id', currentUserId)
+          .single();
+
+        if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
+
+        if (mutualLike) {
+          // Create a match
+          const { error: matchError } = await supabase
+            .from('matches')
+            .insert([{
+              user1_id: currentUserId,
+              user2_id: userId
+            }]);
+
+          if (matchError) throw matchError;
+
+          // Create match notifications
+          await supabase
+            .from('notifications')
+            .insert([
+              {
+                user_id: currentUserId,
+                type: 'match',
+                data: { matched_user_id: userId }
+              },
+              {
+                user_id: userId,
+                type: 'match',
+                data: { matched_user_id: currentUserId }
+              }
+            ]);
+
+          Alert.alert('Match!', `You and ${user?.name || 'this user'} have liked each other!`);
+        } else {
+          // Create like notification
+          await supabase
+            .from('notifications')
+            .insert([{
+              user_id: userId,
+              type: 'like',
+              data: { liker_id: currentUserId }
+            }]);
+
+          Alert.alert('Success', 'Like sent! They will be notified.');
+        }
       }
     } catch (error) {
       console.error('Error toggling like:', error);
-      Alert.alert('Error', 'Failed to update like status');
+      Alert.alert('Error', 'Failed to update like status. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -716,16 +801,22 @@ const ProfileDetailsScreen: React.FC = () => {
           <TouchableOpacity
             style={[
               styles.likeButton,
+              isLiked && styles.likedButton,
               user.is_placeholder && { backgroundColor: colors.accent }
             ]}
             onPress={user.is_placeholder ? handleLikeUnregistered : handleLike}
+            disabled={isLoading}
           >
-            <Text style={[
-              styles.likeButtonText,
-              user.is_placeholder && { color: colors.background }
-            ]}>
-              {user.is_placeholder ? 'Invite' : 'Like'}
-            </Text>
+            {isLoading ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <Text style={[
+                styles.likeButtonText,
+                user.is_placeholder && { color: colors.background }
+              ]}>
+                {user.is_placeholder ? 'Invite' : (isLiked ? 'Liked' : 'Like')}
+              </Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -938,6 +1029,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: layout.borderRadius.full,
     marginTop: spacing.md,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  likedButton: {
+    backgroundColor: colors.success,
   },
   likeButtonText: {
     color: colors.background,

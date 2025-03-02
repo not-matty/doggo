@@ -167,6 +167,8 @@ const AddPhotoScreen: React.FC = () => {
 
     setUploading(true);
     try {
+      console.log('Starting photo upload process for user ID:', uploadUserId);
+
       // Optimize the image
       const optimizedImage = await optimizeImage(selectedImage, {
         maxWidth: 2048,
@@ -176,6 +178,7 @@ const AddPhotoScreen: React.FC = () => {
 
       const fileExt = optimizedImage.uri.split('.').pop();
       const fileName = `${uploadUserId}-${Date.now()}.${fileExt}`;
+      console.log('Prepared file for upload:', fileName);
 
       // Create FormData for the image
       const formData = new FormData();
@@ -186,6 +189,7 @@ const AddPhotoScreen: React.FC = () => {
       } as any);
 
       // Upload to Supabase Storage
+      console.log('Uploading to Supabase storage...');
       const { error: uploadError } = await supabase.storage
         .from('photos')
         .upload(fileName, formData);
@@ -198,30 +202,43 @@ const AddPhotoScreen: React.FC = () => {
         throw uploadError;
       }
 
+      console.log('Image uploaded successfully to storage');
+
       // Get public URL
       const { data: urlData } = supabase.storage
         .from('photos')
         .getPublicUrl(fileName);
 
-      if (!urlData?.publicUrl) throw new Error('Failed to get public URL');
+      if (!urlData?.publicUrl) {
+        console.error('Failed to get public URL');
+        throw new Error('Failed to get public URL');
+      }
 
-      // Create photo record
-      const { error: insertError } = await supabase
+      console.log('Got public URL:', urlData.publicUrl);
+
+      // Create photo record with all necessary fields
+      const newPhoto = {
+        user_id: uploadUserId,
+        url: urlData.publicUrl,
+        caption: caption.trim() || null,
+        created_at: new Date().toISOString()
+      };
+
+      console.log('Inserting photo record:', newPhoto);
+      const { data: insertData, error: insertError } = await supabase
         .from('photos')
-        .insert([{
-          user_id: uploadUserId,
-          url: urlData.publicUrl,
-          caption: caption.trim() || null,
-          created_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+        .insert([newPhoto])
+        .select();
 
       if (insertError) {
         console.error('Database insert error:', insertError);
         throw new Error('Failed to save photo information');
       }
 
+      console.log('Photo record created successfully:', insertData);
+
+      // Show success message
+      Alert.alert('Success', 'Photo uploaded successfully!');
       navigation.goBack();
     } catch (error: any) {
       console.error('Upload error:', error);

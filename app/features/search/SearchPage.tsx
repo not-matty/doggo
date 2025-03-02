@@ -191,6 +191,7 @@ const SearchPage: React.FC = () => {
       }
 
       setSearchLoading(true);
+      console.log('Performing search with query:', searchQuery);
 
       try {
         // Get profile ID from storage if user context is not available
@@ -204,6 +205,8 @@ const SearchPage: React.FC = () => {
           return;
         }
 
+        console.log('Searching with profile ID:', profileId);
+
         // Use search_contacts_and_profiles which returns both registered and unregistered contacts
         const { data: searchResults, error: searchError } = await supabase.rpc(
           'search_contacts_and_profiles',
@@ -214,10 +217,12 @@ const SearchPage: React.FC = () => {
         );
 
         if (searchError) {
-          console.error('Error with contact network search:', searchError);
+          console.error('Error with search_contacts_and_profiles RPC:', searchError);
           // Fallback method - search through contacts directly
           await fallbackSearch(searchQuery, profileId);
         } else if (searchResults && searchResults.length > 0) {
+          console.log(`Found ${searchResults.length} results with search_contacts_and_profiles`);
+
           // Process results from search_contacts_and_profiles
           const processedResults: ContactNetworkUser[] = searchResults.map((result: SearchResult) => ({
             id: result.id, // This is profiles.id (UUID)
@@ -229,7 +234,7 @@ const SearchPage: React.FC = () => {
             isRegistered: result.is_registered
           }));
 
-          // Sort results: Direct contacts first, then second-degree connections, then other users
+          // Sort results: Registered users first, then by connection type
           const sortedResults = processedResults.sort((a, b) => {
             // First prioritize registered vs unregistered
             if (a.isRegistered && !b.isRegistered) return -1;
@@ -251,21 +256,63 @@ const SearchPage: React.FC = () => {
 
           setContactNetworkUsers(sortedResults);
         } else {
-          setContactNetworkUsers([]);
+          console.log('No search results found, trying fallback search');
+          await fallbackSearch(searchQuery, profileId);
         }
       } catch (err) {
         console.error('Search error:', err);
         setContactNetworkUsers([]);
-        // Don't show alert to avoid disrupting UX for minor search errors
-      } finally {
-        setSearchLoading(false);
       }
+      setSearchLoading(false);
     }, 300),
     [contextUser?.id]
   );
 
   const fallbackSearch = async (searchQuery: string, profileId: string) => {
+    console.log('Using fallback search with query:', searchQuery);
     try {
+      // --- SEARCH FOR UNREGISTERED CONTACTS FIRST ---
+      // This is a key improvement to ensure we find unregistered contacts
+      console.log('Searching for unregistered contacts in contacts table');
+      const { data: unregisteredContacts, error: unregisteredError } = await supabase
+        .from('contacts')
+        .select(`
+          id,
+          phone_number,
+          name
+        `)
+        .eq('owner_id', profileId)
+        .is('contact_user_id', null)
+        .or(`phone_number.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
+        .limit(20);
+
+      if (unregisteredError) {
+        console.error('Error fetching unregistered contacts:', unregisteredError);
+      } else {
+        console.log(`Found ${unregisteredContacts?.length || 0} unregistered contacts`);
+      }
+
+      // Also try the unregistered_contacts table
+      console.log('Searching in unregistered_contacts table');
+      const { data: extraUnregisteredContacts, error: extraUnregisteredError } = await supabase
+        .from('unregistered_contacts')
+        .select(`
+          id,
+          phone,
+          name
+        `)
+        .eq('user_id', profileId)
+        .or(`phone.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
+        .limit(20);
+
+      if (extraUnregisteredError) {
+        console.error('Error fetching from unregistered_contacts table:', extraUnregisteredError);
+      } else {
+        console.log(`Found ${extraUnregisteredContacts?.length || 0} contacts in unregistered_contacts table`);
+      }
+
+      // --- SEARCH FOR REGISTERED CONTACTS ---
+      console.log('Searching for registered contacts');
       // Start with direct contacts who are on the app
       const { data: directContacts, error: directError } = await supabase
         .from('contacts')
@@ -288,6 +335,8 @@ const SearchPage: React.FC = () => {
 
       if (directError) {
         console.error('Error fetching direct contacts by phone:', directError);
+      } else {
+        console.log(`Found ${directContacts?.length || 0} direct contacts by phone number`);
       }
 
       // Search for direct contacts by name or username
@@ -312,66 +361,14 @@ const SearchPage: React.FC = () => {
 
       if (directNameError) {
         console.error('Error searching contacts by name:', directNameError);
+      } else {
+        console.log(`Found ${directContactsByName?.length || 0} direct contacts by name`);
       }
-
-      // Get unregistered contacts
-      const { data: unregisteredContacts, error: unregisteredError } = await supabase
-        .from('contacts')
-        .select(`
-          id,
-          phone_number
-        `)
-        .eq('owner_id', profileId)
-        .is('contact_user_id', null)
-        .filter('phone_number', 'ilike', `%${searchQuery}%`)
-        .limit(10);
-
-      if (unregisteredError) {
-        console.error('Error fetching unregistered contacts:', unregisteredError);
-      }
-
-      // Try to get second-degree connections (contacts of contacts)
-      const { data: secondDegreeContacts, error: secondDegreeError } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          name,
-          username,
-          profile_picture_url,
-          phone
-        `)
-        .not('id', 'eq', profileId)
-        .or(`name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
-        .limit(20);
-
-      if (secondDegreeError) {
-        console.error('Error fetching second-degree connections:', secondDegreeError);
-      }
-
-      // Combine direct contacts from both queries
-      const allDirectContacts = [
-        ...(directContacts || []),
-        ...(directContactsByName || [])
-      ];
-
-      // Remove duplicates by ID
-      const uniqueDirectContacts = allDirectContacts.filter((contact, index, self) =>
-        index === self.findIndex((c) => c.id === contact.id)
-      );
-
-      // Get IDs of direct contacts to exclude them from the second-degree list
-      const directContactIds = uniqueDirectContacts
-        .map(contact => contact.profiles?.[0]?.id)
-        .filter(id => id !== undefined);
-
-      // Filter second-degree contacts to exclude direct contacts
-      const filteredSecondDegree = (secondDegreeContacts || [])
-        .filter(profile => !directContactIds.includes(profile.id));
 
       // Combine all results
       const combinedResults: ContactNetworkUser[] = [
         // Process direct contacts
-        ...uniqueDirectContacts.map(contact => ({
+        ...(directContacts || []).map(contact => ({
           id: contact.profiles?.[0]?.id || contact.id,
           name: contact.profiles?.[0]?.name || 'Contact',
           username: contact.profiles?.[0]?.username || 'Unknown',
@@ -381,10 +378,21 @@ const SearchPage: React.FC = () => {
           isRegistered: true
         })),
 
-        // Process unregistered contacts
+        // Process direct contacts by name
+        ...(directContactsByName || []).map(contact => ({
+          id: contact.profiles?.[0]?.id || contact.id,
+          name: contact.profiles?.[0]?.name || 'Contact',
+          username: contact.profiles?.[0]?.username || 'Unknown',
+          profile_picture_url: contact.profiles?.[0]?.profile_picture_url || null,
+          phone_number: contact.phone_number,
+          connection_type: 'direct' as const,
+          isRegistered: true
+        })),
+
+        // Process unregistered contacts from contacts table
         ...(unregisteredContacts || []).map(contact => ({
           id: contact.id,
-          name: `Contact: ${contact.phone_number}`,
+          name: contact.name || `Contact: ${contact.phone_number}`,
           username: 'Not on doggo yet',
           profile_picture_url: null,
           phone_number: contact.phone_number,
@@ -392,19 +400,25 @@ const SearchPage: React.FC = () => {
           isRegistered: false
         })),
 
-        // Process second-degree connections
-        ...filteredSecondDegree.map(profile => ({
-          id: profile.id,
-          name: profile.name || 'User',
-          username: profile.username || '',
-          profile_picture_url: profile.profile_picture_url,
-          phone_number: profile.phone,
-          connection_type: 'second_degree' as const,
-          isRegistered: true
+        // Process unregistered contacts from unregistered_contacts table
+        ...(extraUnregisteredContacts || []).map(contact => ({
+          id: contact.id,
+          name: contact.name || `Contact: ${contact.phone}`,
+          username: 'Not on doggo yet',
+          profile_picture_url: null,
+          phone_number: contact.phone,
+          connection_type: 'unregistered' as const,
+          isRegistered: false
         }))
       ];
 
-      setContactNetworkUsers(combinedResults);
+      // Remove duplicates
+      const uniqueResults = Array.from(new Map(
+        combinedResults.map(item => [item.id, item])
+      ).values());
+
+      console.log(`Fallback search found ${uniqueResults.length} total unique results`);
+      setContactNetworkUsers(uniqueResults);
     } catch (error) {
       console.error('Fallback search error:', error);
       setContactNetworkUsers([]);
@@ -598,35 +612,6 @@ const SearchPage: React.FC = () => {
   };
 
   const renderUserItem = ({ item }: { item: ContactNetworkUser }) => {
-    // Determine what button to show based on user type
-    let actionButton = null;
-
-    if (item.isRegistered) {
-      // Show like button for registered users
-      actionButton = (
-        <TouchableOpacity
-          style={styles.likeButton}
-          onPress={() => handleLikeUser(item.id, item.name)}
-        >
-          <Text style={styles.likeButtonText}>Like</Text>
-        </TouchableOpacity>
-      );
-    } else {
-      // Show invite button for unregistered contacts
-      actionButton = (
-        <TouchableOpacity
-          style={styles.inviteButton}
-          onPress={() => {
-            if (item.phone_number) {
-              handleLikeUnregistered(item.phone_number, item.name);
-            }
-          }}
-        >
-          <Text style={styles.inviteButtonText}>Invite</Text>
-        </TouchableOpacity>
-      );
-    }
-
     // Determine connection badge text
     let connectionBadgeText = '';
     switch (item.connection_type) {
@@ -680,8 +665,6 @@ const SearchPage: React.FC = () => {
           </Text>
           <Text style={styles.connectionType}>{connectionBadgeText}</Text>
         </View>
-
-        {actionButton}
       </TouchableOpacity>
     );
   };
@@ -751,6 +734,7 @@ const SearchPage: React.FC = () => {
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.container}>
           <SearchBar query={query} setQuery={setQuery} translateY={translateY} />
+          <View style={styles.searchBarPlaceholder} />
 
           <View style={styles.contentContainer}>
             {query ? (
@@ -763,7 +747,7 @@ const SearchPage: React.FC = () => {
                     data={contactNetworkUsers}
                     renderItem={renderUserItem}
                     keyExtractor={(item) => item.id}
-                    contentContainerStyle={{ paddingBottom: 20 }}
+                    contentContainerStyle={styles.searchResultsList}
                   />
                 ) : (
                   <View style={styles.noResultsContainer}>
@@ -832,12 +816,12 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: SEARCH_BAR_HEIGHT,
     backgroundColor: colors.background,
+    paddingHorizontal: 16,
   },
   userItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#EEEEEE',
   },
@@ -849,6 +833,7 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+    justifyContent: 'center',
   },
   userName: {
     fontSize: 16,
@@ -933,7 +918,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333333',
+    marginTop: 10,
     marginBottom: 16,
+  },
+  searchBarPlaceholder: {
+    height: SEARCH_BAR_HEIGHT,
+  },
+  searchResultsList: {
+    paddingBottom: 20,
+    paddingTop: 10,
   },
 });
 
