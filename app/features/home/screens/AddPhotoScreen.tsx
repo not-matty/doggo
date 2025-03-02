@@ -20,6 +20,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
 import { colors, spacing, typography, layout } from '@styles/theme';
 import { useNavigation } from '@react-navigation/native';
 import { optimizeImage } from '../../../utils/imageOptimizer';
@@ -31,7 +32,15 @@ const AddPhotoScreen: React.FC = () => {
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const { user, checkContactsPermission } = useContext(AuthContext);
+
+  // Use both contexts, prioritizing the Clerk one
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Choose which auth context to use with safe null checking
+  const contextUser = clerkAuthContext?.user || authContext?.user;
+  const checkContactsPermission = clerkAuthContext?.checkContactsPermission || authContext?.checkContactsPermission;
+
   const navigation = useNavigation();
   const [cameraPermission, setCameraPermission] = useState(false);
   const [mediaLibraryPermission, setMediaLibraryPermission] = useState(false);
@@ -42,8 +51,8 @@ const AddPhotoScreen: React.FC = () => {
 
     // Check for user ID from context or AsyncStorage
     const checkUserId = async () => {
-      if (user?.id) {
-        setUserId(user.id);
+      if (contextUser?.id) {
+        setUserId(contextUser.id);
         return;
       }
 
@@ -66,7 +75,7 @@ const AddPhotoScreen: React.FC = () => {
     };
 
     checkUserId();
-  }, [user?.id]);
+  }, [contextUser?.id]);
 
   useEffect(() => {
     (async () => {
@@ -120,11 +129,11 @@ const AddPhotoScreen: React.FC = () => {
   const handleAddPhoto = async () => {
     // Before accessing camera or library, check for contacts permission after auth
     try {
-      if (user) {
+      if (contextUser) {
         console.log('Checking contacts permission before adding photo');
-        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${user.id}`);
+        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${contextUser.id}`);
         if (hasAuthenticated === 'true') {
-          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${user.id}`);
+          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${contextUser.id}`);
           if (hasImportedContacts === 'false') {
             console.log('User has not imported contacts yet, requesting permission');
             await checkContactsPermission();
@@ -148,7 +157,7 @@ const AddPhotoScreen: React.FC = () => {
   };
 
   const handleUpload = async () => {
-    const uploadUserId = userId || user?.id;
+    const uploadUserId = userId || contextUser?.id;
 
     if (!selectedImage || !uploadUserId) {
       Alert.alert('Error', 'Unable to upload. Please try again after signing in.');

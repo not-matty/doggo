@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import RootNavigator from '@navigation/RootNavigator';
 import { ClerkProvider } from '@context/ClerkProvider';
 import { AppProvider } from '@context/AppContext';
+import ClerkAuthContextProvider from '@context/ClerkAuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as Contacts from 'expo-contacts';
 import { Alert } from 'react-native';
@@ -57,11 +58,13 @@ const App: React.FC = () => {
 
   return (
     <ClerkProvider>
-      <AppProvider>
-        <NavigationContainer ref={navigationRef}>
-          <RootNavigator />
-        </NavigationContainer>
-      </AppProvider>
+      <NavigationContainer ref={navigationRef}>
+        <ClerkAuthContextProvider>
+          <AppProvider>
+            <RootNavigator />
+          </AppProvider>
+        </ClerkAuthContextProvider>
+      </NavigationContainer>
     </ClerkProvider>
   );
 };

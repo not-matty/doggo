@@ -23,12 +23,15 @@ import { ProfileStackParamList, User } from '@navigation/types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase, clerkIdToUuid } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
 import Feather from 'react-native-vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, spacing, typography, layout, shadows } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { optimizeImage } from '../../../utils/imageOptimizer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Camera, CameraType } from 'expo-camera';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 interface Photo {
   id: string;
@@ -76,7 +79,14 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Photo>);
 const ProfilePage: React.FC = () => {
   const route = useRoute<ProfilePageRouteProp>();
   const navigation = useNavigation<ProfilePageNavigationProp>();
-  const { user: authUser, signOut, checkContactsPermission } = useContext(AuthContext);
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Choose which auth context to use with proper null checking
+  const contextUser = clerkAuthContext?.user || authContext?.user;
+  const signOut = clerkAuthContext?.signOut || authContext?.signOut;
+  const checkContactsPermission = clerkAuthContext?.checkContactsPermission || authContext?.checkContactsPermission;
+
   const [profile, setProfile] = useState<Profile | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,9 +158,9 @@ const ProfilePage: React.FC = () => {
       setLoading(true);
 
       // Get user ID from multiple sources
-      let userId = authUser?.id;
+      let userId = contextUser?.id;
 
-      // If authUser is not available, try from AsyncStorage
+      // If user is not available, try from AsyncStorage
       if (!userId) {
         const clerkId = await AsyncStorage.getItem('clerk_user_id');
         const supabaseUuid = await AsyncStorage.getItem('supabase_uuid');
@@ -164,51 +174,146 @@ const ProfilePage: React.FC = () => {
         console.log('Using user ID from AsyncStorage:', userId);
       }
 
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          name,
-          username,
-          profile_picture_url,
-          clerk_id,
-          bio,
-          created_at,
-          updated_at,
-          photos (
-            id,
-            url,
-            caption,
-            created_at,
-            user_id
-          )
-        `)
-        .eq('clerk_id', userId)
-        .single();
+      const getProfile = async () => {
+        try {
+          setLoading(true);
 
-      if (profileError) throw profileError;
+          // First try with user ID from context
+          const profileId = contextUser?.id || userId;
+          const clerkId = contextUser?.clerk_id;
 
-      if (profileData) {
-        setProfile(profileData);
-        if (profileData.photos) {
-          const sortedPhotos = [...profileData.photos].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          setPhotos(sortedPhotos);
-          await prefetchImages(sortedPhotos);
+          // Exit early if we have no ID to work with
+          if (!profileId && !clerkId) {
+            console.log('No user ID available for profile fetch');
+            setLoading(false);
+            return;
+          }
+
+          console.log('Fetching profile with IDs:', { profileId, clerkId });
+
+          let profileData = null;
+          let profileError = null;
+
+          // First try to fetch by profile ID directly
+          if (profileId) {
+            const result = await supabase
+              .from('profiles')
+              .select(`
+                id,
+                name,
+                username,
+                profile_picture_url,
+                phone,
+                clerk_id,
+                bio,
+                created_at,
+                updated_at,
+                photos (
+                  id,
+                  url,
+                  caption,
+                  created_at,
+                  user_id
+                )
+              `)
+              .eq('id', profileId);
+
+            profileData = result.data?.[0]; // Get the first item if it exists
+            profileError = result.error;
+
+            if (profileData) {
+              console.log('Found profile by profile ID');
+            } else {
+              console.log('No profile found with profile ID, will try clerk_id');
+            }
+          }
+
+          // If first attempt failed and we have a clerk_id, try with that
+          if (!profileData && clerkId) {
+            // Convert Clerk ID to UUID format for Supabase
+            const clerkUuid = clerkIdToUuid(clerkId);
+
+            const result = await supabase
+              .from('profiles')
+              .select(`
+                id,
+                name,
+                username,
+                profile_picture_url,
+                phone,
+                clerk_id,
+                bio,
+                created_at,
+                updated_at,
+                photos (
+                  id,
+                  url,
+                  caption,
+                  created_at,
+                  user_id
+                )
+              `)
+              .eq('clerk_id', clerkUuid);
+
+            profileData = result.data?.[0]; // Get the first item if it exists
+            profileError = result.error;
+
+            if (profileData) {
+              console.log('Found profile by clerk_id');
+            } else {
+              console.log('No profile found with clerk_id either');
+            }
+          }
+
+          // Handle the case where no profile was found
+          if (!profileData) {
+            console.log('No profile found with available IDs');
+            // Store current user ID for debugging
+            if (profileId) {
+              console.log('Current profile ID:', profileId);
+            }
+            if (clerkId) {
+              const clerkUuid = clerkIdToUuid(clerkId);
+              console.log('Current clerk ID:', clerkId, 'UUID format:', clerkUuid);
+            }
+
+            if (profileError) {
+              console.error('Error during profile fetch:', profileError);
+              throw profileError;
+            } else {
+              throw new Error('Profile not found');
+            }
+          }
+
+          // Process the found profile data
+          if (profileData) {
+            setProfile(profileData);
+            if (profileData.photos) {
+              const sortedPhotos = [...profileData.photos].sort(
+                (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              );
+              setPhotos(sortedPhotos);
+              await prefetchImages(sortedPhotos);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching profile:', error);
+          Alert.alert('Error', 'Failed to load profile data. Please check your connection and try again.');
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
         }
-      }
+      };
+
+      await getProfile();
     } catch (error) {
       console.error('Error fetching profile:', error);
       Alert.alert('Error', 'Failed to load profile data');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    if (authUser?.id) {
+    if (contextUser?.id) {
       fetchUserAndPosts();
     } else {
       // Try to use saved credentials
@@ -244,7 +349,7 @@ const ProfilePage: React.FC = () => {
 
       return () => clearTimeout(timeout);
     }
-  }, [authUser?.id]);
+  }, [contextUser?.id]);
 
   useEffect(() => {
     // Simple alternating distribution of posts between columns
@@ -269,15 +374,15 @@ const ProfilePage: React.FC = () => {
   };
 
   const handleProfileImagePress = async () => {
-    if (!profile || profile.id !== authUser?.id) return;
+    if (!profile || profile.id !== contextUser?.id) return;
 
     try {
       // Check for contacts permission if this is an appropriate time
-      if (authUser) {
+      if (contextUser) {
         console.log('Checking contacts permission status before updating profile picture');
-        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${authUser.id}`);
+        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${contextUser.id}`);
         if (hasAuthenticated === 'true') {
-          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${authUser.id}`);
+          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${contextUser.id}`);
           if (hasImportedContacts === 'false') {
             console.log('User hasn\'t imported contacts yet, requesting permission');
             await checkContactsPermission();
@@ -311,7 +416,7 @@ const ProfilePage: React.FC = () => {
       // Launch image picker after permissions are granted
       console.log('Launching image picker');
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 1,
@@ -456,10 +561,17 @@ const ProfilePage: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log("Signing out user...");
               await signOut();
+              setShowSettings(false); // Close the settings modal after signing out
+              // Navigate to login/welcome screen if needed
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Welcome' as any }]
+              });
             } catch (error) {
               console.error('Error signing out:', error);
-              Alert.alert('Error', 'Failed to sign out');
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
             }
           },
         },
@@ -619,7 +731,7 @@ const ProfilePage: React.FC = () => {
                       }}
                       style={styles.profileImage}
                     />
-                    {profile?.id === authUser?.id && !uploadingImage && (
+                    {profile?.id === contextUser?.id && !uploadingImage && (
                       <View style={styles.profileImageOverlay}>
                         <View style={styles.cameraIconContainer}>
                           <Feather name="camera" size={20} color={colors.background} />

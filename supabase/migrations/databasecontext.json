@@ -1,296 +1,338 @@
 [
-    {
-      "table_name": "contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "contact_user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "type",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "data",
-      "data_type": "jsonb",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "is_read",
-      "data_type": "boolean",
-      "is_nullable": "YES",
-      "column_default": "false"
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "photos",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "photos",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "url",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "photos",
-      "column_name": "caption",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()"
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0"
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "source",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()"
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liker_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liked_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())"
-    }
-  ]
+  {
+    "table_name": "contacts",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "contacts",
+    "column_name": "phone_number",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "contacts",
+    "column_name": "owner_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "contacts",
+    "column_name": "contact_user_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "contacts",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "contacts",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "likes",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "likes",
+    "column_name": "liker_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "likes",
+    "column_name": "liked_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "likes",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "likes",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "matches",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "matches",
+    "column_name": "user1_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "matches",
+    "column_name": "user2_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "matches",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "matches",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "type",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "data",
+    "data_type": "jsonb",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "is_read",
+    "data_type": "boolean",
+    "is_nullable": "YES",
+    "column_default": "false"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "photos",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "photos",
+    "column_name": "user_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "photos",
+    "column_name": "url",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "photos",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "photos",
+    "column_name": "caption",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "photos",
+    "column_name": "is_public",
+    "data_type": "boolean",
+    "is_nullable": "YES",
+    "column_default": "true"
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "username",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "profile_picture_url",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "email",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "phone",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "likes",
+    "data_type": "integer",
+    "is_nullable": "YES",
+    "column_default": "0"
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "bio",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "profiles",
+    "column_name": "clerk_id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "unregistered_contacts",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "unregistered_contacts",
+    "column_name": "phone",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "unregistered_contacts",
+    "column_name": "name",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "unregistered_contacts",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "timezone('utc'::text, now())"
+  },
+  {
+    "table_name": "unregistered_contacts",
+    "column_name": "source",
+    "data_type": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "unregistered_likes",
+    "column_name": "id",
+    "data_type": "uuid",
+    "is_nullable": "NO",
+    "column_default": "uuid_generate_v4()"
+  },
+  {
+    "table_name": "unregistered_likes",
+    "column_name": "liker_phone",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "unregistered_likes",
+    "column_name": "liked_phone",
+    "data_type": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "unregistered_likes",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone",
+    "is_nullable": "YES",
+    "column_default": "timezone('utc'::text, now())"
+  }
+]

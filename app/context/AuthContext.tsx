@@ -1,18 +1,19 @@
 // app/context/AuthContext.tsx
 
-import React, { createContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { Alert, Platform, Linking } from 'react-native';
 import * as Contacts from 'expo-contacts';
-import { supabase } from '@services/supabase';
+import { supabase } from '../services/supabase';
 import { User } from '@navigation/types';
 import { navigate } from '@navigation/RootNavigation'; // Global navigation helper
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '@navigation/types';
+import { useAuth as useClerkAuth } from '@clerk/clerk-expo';
 
 // Define the shape of our AuthContext
-type AuthContextType = {
+interface AuthContextProps {
   user: User | null;
   loading: boolean;
   signInWithPhone: (phone: string) => Promise<void>;
@@ -27,19 +28,35 @@ type AuthContextType = {
   isUsernameTaken: (username: string) => Promise<boolean>;
   updateProfile: (profile: Partial<User>) => Promise<void>;
   checkContactsPermission: () => Promise<boolean>;
-};
+}
 
-export const AuthContext = createContext<AuthContextType>({
-  user: null,
-  loading: true,
-  signInWithPhone: async () => { },
-  signOut: async () => { },
-  verifyOtp: async () => { },
-  signUpWithPhone: async () => { },
-  isUsernameTaken: async () => false,
-  updateProfile: async () => { },
-  checkContactsPermission: async () => false,
-});
+// User profile type
+interface Profile {
+  id: string;
+  name: string;
+  username: string;
+  profile_picture_url?: string | null;
+  bio?: string;
+  phone?: string;
+  clerk_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Create the AuthContext
+export const AuthContext = createContext<AuthContextProps | null>(null);
+
+// Navigation type
+type RootNavigationProp = StackNavigationProp<RootStackParamList>;
+
+// Hook to use AuthContext
+export const useAuthContext = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuthContext must be used within an AuthContextProvider');
+  }
+  return context;
+};
 
 type AuthProviderProps = {
   children: ReactNode;
@@ -58,12 +75,12 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-type RootNavigationProp = StackNavigationProp<RootStackParamList>;
-
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation<RootNavigationProp>();
+  const [contactsPermission, setContactsPermission] = useState<string>('undetermined');
+  const clerkAuth = useClerkAuth();
 
   // --------------------------
   // Helper: Normalize Phone Number
@@ -627,11 +644,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signOut = async () => {
     try {
+      console.log("Signing out...");
+
+      // Clear any local storage items
       await AsyncStorage.removeItem('userPhone');
       await AsyncStorage.removeItem('userId');
+      await AsyncStorage.removeItem('clerk_user_id');
+      await AsyncStorage.removeItem('supabase_uuid');
+      await AsyncStorage.removeItem('profile_id');
+      await AsyncStorage.removeItem('last_profile_check');
+
+      // Sign out of Supabase
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase sign out error:", error);
+      }
+
+      // Sign out of Clerk
+      if (clerkAuth && clerkAuth.signOut) {
+        await clerkAuth.signOut();
+      } else {
+        console.warn("Clerk signOut method not available");
+      }
+
+      // Reset user state
       setUser(null);
+
+      console.log("Successfully signed out");
     } catch (error: any) {
       console.error('Sign out error:', error);
       throw new Error(error.message);

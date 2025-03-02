@@ -7,12 +7,18 @@ import ProfileDetailsPage from './screens/ProfileDetailsScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
 import { ProfileStackParamList } from '@navigation/types';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
 import { colors } from '@styles/theme';
 
 const ProfileStack = createStackNavigator<ProfileStackParamList>();
 
 const ProfileNavigator: React.FC = () => {
-  const { user } = useContext(AuthContext);
+  // Use both contexts, prioritizing Clerk
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Safely access the user with null checking
+  const contextUser = clerkAuthContext?.user || authContext?.user;
 
   return (
     <ProfileStack.Navigator>

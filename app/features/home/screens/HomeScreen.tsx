@@ -28,6 +28,7 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { MainStackParamList } from '@navigation/types';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext, Profile } from '@context/ClerkAuthContext';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors, spacing, typography, layout, shadows } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
@@ -108,7 +109,7 @@ interface DebugOverlayProps {
   loading: boolean;
   loadingStage: string;
   posts: Post[];
-  user: User | null;
+  user: User | Profile | null;  // Accept either User or Profile
   profile: any;
   debouncedLogDebugInfo: () => void;
   setLoadingStage: React.Dispatch<React.SetStateAction<string>>;
@@ -210,7 +211,13 @@ const AnimatedFlatList = Animated.createAnimatedComponent(
 // Main component
 const HomeScreen = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const { user } = useContext(AuthContext);
+  // Use both contexts for now, prioritizing the Clerk one
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Choose which auth context to use
+  const contextUser = clerkAuthContext?.user || authContext?.user;
+
   const { state: { profile } } = useApp();
   const { userId, isSignedIn } = useAuth();
 
@@ -403,14 +410,14 @@ const HomeScreen = () => {
   // Define navigateToProfile before it's used in preloadProfile
   const navigateToProfile = useCallback((userId: string) => {
     // If it's the current user's profile, navigate directly to the Profile tab
-    if (user?.id === userId) {
+    if (contextUser?.id === userId) {
       // @ts-ignore - Navigating to root tab
       navigation.navigate('Profile');
     } else {
       // If it's another user's profile, navigate to their ProfileDetails
       navigation.navigate('ProfileDetails', { userId });
     }
-  }, [navigation, user?.id]);
+  }, [navigation, contextUser?.id]);
 
   // Helper function for contacts and permissions
   const requestContactsPermission = async () => {
@@ -497,13 +504,13 @@ const HomeScreen = () => {
   // Define handleLike
   const handleLike = useCallback(async (post: Post) => {
     try {
-      if (!user?.clerk_id) return;
+      if (!contextUser?.clerk_id) return;
 
       const { error: likeError } = await supabase
         .from('likes')
         .insert([
           {
-            liker_id: user.clerk_id,
+            liker_id: contextUser.clerk_id,
             liked_id: post.user.clerk_id,
             created_at: new Date().toISOString()
           }
@@ -524,7 +531,7 @@ const HomeScreen = () => {
       console.error('Error liking post:', error);
       Alert.alert('Error', 'Failed to like post');
     }
-  }, [user?.clerk_id]);
+  }, [contextUser?.clerk_id]);
 
   // Define logDebugInfo
   const logDebugInfo = useCallback(() => {
@@ -535,7 +542,7 @@ const HomeScreen = () => {
       'Loading': loading ? 'Yes' : 'No',
       'Stage': loadingStage,
       'Posts': posts.length,
-      'User': user ? user.username : 'None',
+      'User': contextUser ? contextUser.username : 'None',
       'Profile': profile ? profile.username : 'None',
       'Clerk ID': profile?.clerk_id || 'None',
     };
@@ -545,7 +552,7 @@ const HomeScreen = () => {
       console.log(`${key}: ${value}`);
     });
     console.log('=======================');
-  }, [getAuthStateDisplay, loading, loadingStage, posts.length, user, profile]);
+  }, [getAuthStateDisplay, loading, loadingStage, posts.length, contextUser, profile]);
 
   // Debounced version of logDebugInfo
   const debouncedLogDebugInfo = useMemo(
@@ -761,7 +768,7 @@ const HomeScreen = () => {
     }
 
     // IMPORTANT: Only fetch posts ONCE after authentication and only if we haven't already
-    if (!didFetchPostsRef.current && (user?.id || profile?.id || userId) && posts.length === 0 && !loading) {
+    if (!didFetchPostsRef.current && (contextUser?.id || profile?.id || userId) && posts.length === 0 && !loading) {
       console.log('Initial fetch of posts for newly authenticated user - THIS SHOULD HAPPEN ONLY ONCE');
       didFetchPostsRef.current = true; // Mark as fetched to prevent future automatic fetches
       fetchPosts();
@@ -793,7 +800,7 @@ const HomeScreen = () => {
 
     // No timer to clean up if we didn't create one
     return undefined;
-  }, [user?.id, profile?.id, userId, isSignedIn, showDebug, debouncedLogDebugInfo, posts.length, loading]); // REMOVED fetchPosts from dependencies
+  }, [contextUser?.id, profile?.id, userId, isSignedIn, showDebug, debouncedLogDebugInfo, posts.length, loading]); // REMOVED fetchPosts from dependencies
 
   // Render
   if (loading && posts.length === 0) {
@@ -807,7 +814,7 @@ const HomeScreen = () => {
             loading={loading}
             loadingStage={loadingStage}
             posts={posts}
-            user={user}
+            user={contextUser || null}
             profile={profile}
             debouncedLogDebugInfo={debouncedLogDebugInfo}
             setLoadingStage={setLoadingStage}
@@ -862,7 +869,7 @@ const HomeScreen = () => {
           setSelectedPost(null);
         }}
         onDelete={handleDeletePost}
-        isOwner={selectedPost?.user.id === user?.id}
+        isOwner={selectedPost?.user.id === contextUser?.id}
       />
 
       {showDebug && (
@@ -871,7 +878,7 @@ const HomeScreen = () => {
           loading={loading}
           loadingStage={loadingStage}
           posts={posts}
-          user={user}
+          user={contextUser || null}
           profile={profile}
           debouncedLogDebugInfo={debouncedLogDebugInfo}
           setLoadingStage={setLoadingStage}

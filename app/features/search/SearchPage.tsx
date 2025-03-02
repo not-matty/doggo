@@ -26,6 +26,7 @@ import EmptyState from '@components/common/EmptyState';
 import { supabase } from '@services/supabase';
 import debounce from 'lodash.debounce';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext, Profile } from '@context/ClerkAuthContext';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { colors, spacing } from '@styles/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,11 +44,10 @@ interface Post {
   created_at: string;
   user_id: string;
   user: {
-    id: string;
+    id: string; // profiles.id (UUID)
     name: string;
     username: string;
     profile_picture_url?: string | null;
-    clerk_id: string;
   };
 }
 
@@ -58,26 +58,31 @@ type ContactNetworkUser = {
   profile_picture_url: string | null;
   phone_number?: string;
   connection_type: 'direct' | 'second_degree' | 'unregistered';
-  clerk_id?: string | null;
   isRegistered: boolean;
 };
 
 // Define a proper type for search results from RPC
 interface SearchResult {
-  user_id: string;
-  profile_id: string | null;
-  username: string;
+  id: string; // UUID from profiles.id
   name: string;
+  username: string | null;
   profile_picture_url: string | null;
-  clerk_id: string | null;
-  connection_type: 'direct' | 'second_degree' | 'unregistered';
-  contact_id: string;
-  phone_number: string;
+  phone_number: string | null;
+  is_registered: boolean;
+  is_contact: boolean;
+  connection_type: string;
 }
 
 const SearchPage: React.FC = () => {
   const navigation = useNavigation<SearchPageNavigationProp>();
-  const { user, checkContactsPermission } = useContext(AuthContext);
+  // Use both contexts for now, prioritizing the Clerk one
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Choose which auth context to use
+  const contextUser = clerkAuthContext?.user || authContext?.user;
+  const checkContactsPermission = clerkAuthContext?.checkContactsPermission || authContext?.checkContactsPermission;
+
   const [query, setQuery] = useState('');
   const [contactNetworkUsers, setContactNetworkUsers] = useState<ContactNetworkUser[]>([]);
   const [explorePosts, setExplorePosts] = useState<Post[]>([]);
@@ -97,13 +102,13 @@ const SearchPage: React.FC = () => {
   }, []);
 
   const checkContactsStatus = async () => {
-    if (user) {
+    if (contextUser) {
       try {
-        const stats = await getContactsStats(user.id);
+        const stats = await getContactsStats(contextUser.id);
         setContactsStats(stats);
 
         // If contacts not imported, prompt for permission
-        if (stats && !stats.hasImported) {
+        if (stats && !stats.hasImported && checkContactsPermission) {
           const permissionGranted = await checkContactsPermission();
           if (permissionGranted) {
             // Refresh after import
@@ -140,8 +145,7 @@ const SearchPage: React.FC = () => {
               id,
               name,
               username,
-              profile_picture_url,
-              clerk_id
+              profile_picture_url
             )
           `)
           .order('created_at', { ascending: false })
@@ -160,8 +164,7 @@ const SearchPage: React.FC = () => {
               id: post.user?.[0]?.id || '',
               name: post.user?.[0]?.name || '',
               username: post.user?.[0]?.username || '',
-              profile_picture_url: post.user?.[0]?.profile_picture_url || null,
-              clerk_id: post.user?.[0]?.clerk_id || ''
+              profile_picture_url: post.user?.[0]?.profile_picture_url || null
             }
           }));
 
@@ -191,7 +194,7 @@ const SearchPage: React.FC = () => {
 
       try {
         // Get profile ID from storage if user context is not available
-        const profileId = user?.id || await AsyncStorage.getItem('profile_id');
+        const profileId = contextUser?.id || await AsyncStorage.getItem('profile_id');
 
         // Validate profile ID before using it
         if (!profileId) {
@@ -201,30 +204,54 @@ const SearchPage: React.FC = () => {
           return;
         }
 
-        // First try our new RPC function
+        // Use search_contacts_and_profiles which returns both registered and unregistered contacts
         const { data: searchResults, error: searchError } = await supabase.rpc(
-          'search_contact_network',
-          { search_term: searchQuery }
+          'search_contacts_and_profiles',
+          {
+            search_term: searchQuery,
+            current_user_id: profileId
+          }
         );
 
         if (searchError) {
           console.error('Error with contact network search:', searchError);
           // Fallback method - search through contacts directly
           await fallbackSearch(searchQuery, profileId);
-        } else if (searchResults) {
-          // Process results from the RPC call
+        } else if (searchResults && searchResults.length > 0) {
+          // Process results from search_contacts_and_profiles
           const processedResults: ContactNetworkUser[] = searchResults.map((result: SearchResult) => ({
-            id: result.profile_id || result.contact_id,
+            id: result.id, // This is profiles.id (UUID)
             name: result.name || 'Unknown',
             username: result.username || 'Not on doggo yet',
             profile_picture_url: result.profile_picture_url || null,
-            phone_number: result.phone_number,
-            connection_type: result.connection_type,
-            clerk_id: result.clerk_id,
-            isRegistered: result.profile_id !== null
+            phone_number: result.phone_number || null,
+            connection_type: result.connection_type as 'direct' | 'second_degree' | 'unregistered',
+            isRegistered: result.is_registered
           }));
 
-          setContactNetworkUsers(processedResults);
+          // Sort results: Direct contacts first, then second-degree connections, then other users
+          const sortedResults = processedResults.sort((a, b) => {
+            // First prioritize registered vs unregistered
+            if (a.isRegistered && !b.isRegistered) return -1;
+            if (!a.isRegistered && b.isRegistered) return 1;
+
+            // Then prioritize by connection type
+            const connectionOrder = {
+              'direct': 0,
+              'second_degree': 1,
+              'unregistered': 2,
+              'network': 3
+            };
+
+            const aOrder = connectionOrder[a.connection_type] || 999;
+            const bOrder = connectionOrder[b.connection_type] || 999;
+
+            return aOrder - bOrder;
+          });
+
+          setContactNetworkUsers(sortedResults);
+        } else {
+          setContactNetworkUsers([]);
         }
       } catch (err) {
         console.error('Search error:', err);
@@ -234,7 +261,7 @@ const SearchPage: React.FC = () => {
         setSearchLoading(false);
       }
     }, 300),
-    [user?.id]
+    [contextUser?.id]
   );
 
   const fallbackSearch = async (searchQuery: string, profileId: string) => {
@@ -244,59 +271,136 @@ const SearchPage: React.FC = () => {
         .from('contacts')
         .select(`
           id,
-          name,
           phone_number,
+          owner_id,
           contact_user_id,
           profiles:contact_user_id (
             id,
             name,
             username,
-            profile_picture_url,
-            clerk_id
+            profile_picture_url
           )
         `)
-        .eq('user_id', profileId)
+        .eq('owner_id', profileId)
         .not('contact_user_id', 'is', null)
-        .or(`name.ilike.%${searchQuery}%,phone_number.ilike.%${searchQuery}%`)
+        .filter('phone_number', 'ilike', `%${searchQuery}%`)
         .limit(10);
 
-      if (directError) throw directError;
+      if (directError) {
+        console.error('Error fetching direct contacts by phone:', directError);
+      }
+
+      // Search for direct contacts by name or username
+      const { data: directContactsByName, error: directNameError } = await supabase
+        .from('contacts')
+        .select(`
+          id,
+          phone_number,
+          owner_id,
+          contact_user_id,
+          profiles!contact_user_id (
+            id,
+            name,
+            username,
+            profile_picture_url
+          )
+        `)
+        .eq('owner_id', profileId)
+        .not('contact_user_id', 'is', null)
+        .or(`profiles.name.ilike.%${searchQuery}%,profiles.username.ilike.%${searchQuery}%`)
+        .limit(10);
+
+      if (directNameError) {
+        console.error('Error searching contacts by name:', directNameError);
+      }
 
       // Get unregistered contacts
       const { data: unregisteredContacts, error: unregisteredError } = await supabase
         .from('contacts')
         .select(`
           id,
-          name,
           phone_number
         `)
-        .eq('user_id', profileId)
+        .eq('owner_id', profileId)
         .is('contact_user_id', null)
-        .or(`name.ilike.%${searchQuery}%,phone_number.ilike.%${searchQuery}%`)
+        .filter('phone_number', 'ilike', `%${searchQuery}%`)
         .limit(10);
 
-      if (unregisteredError) throw unregisteredError;
+      if (unregisteredError) {
+        console.error('Error fetching unregistered contacts:', unregisteredError);
+      }
 
-      // Combine results
+      // Try to get second-degree connections (contacts of contacts)
+      const { data: secondDegreeContacts, error: secondDegreeError } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          name,
+          username,
+          profile_picture_url,
+          phone
+        `)
+        .not('id', 'eq', profileId)
+        .or(`name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
+        .limit(20);
+
+      if (secondDegreeError) {
+        console.error('Error fetching second-degree connections:', secondDegreeError);
+      }
+
+      // Combine direct contacts from both queries
+      const allDirectContacts = [
+        ...(directContacts || []),
+        ...(directContactsByName || [])
+      ];
+
+      // Remove duplicates by ID
+      const uniqueDirectContacts = allDirectContacts.filter((contact, index, self) =>
+        index === self.findIndex((c) => c.id === contact.id)
+      );
+
+      // Get IDs of direct contacts to exclude them from the second-degree list
+      const directContactIds = uniqueDirectContacts
+        .map(contact => contact.profiles?.[0]?.id)
+        .filter(id => id !== undefined);
+
+      // Filter second-degree contacts to exclude direct contacts
+      const filteredSecondDegree = (secondDegreeContacts || [])
+        .filter(profile => !directContactIds.includes(profile.id));
+
+      // Combine all results
       const combinedResults: ContactNetworkUser[] = [
-        ...(directContacts || []).map(contact => ({
-          id: contact.contact_user_id || contact.id,
-          name: contact.profiles?.[0]?.name || contact.name || 'Unknown',
+        // Process direct contacts
+        ...uniqueDirectContacts.map(contact => ({
+          id: contact.profiles?.[0]?.id || contact.id,
+          name: contact.profiles?.[0]?.name || 'Contact',
           username: contact.profiles?.[0]?.username || 'Unknown',
           profile_picture_url: contact.profiles?.[0]?.profile_picture_url || null,
           phone_number: contact.phone_number,
           connection_type: 'direct' as const,
-          clerk_id: contact.profiles?.[0]?.clerk_id || null,
           isRegistered: true
         })),
+
+        // Process unregistered contacts
         ...(unregisteredContacts || []).map(contact => ({
           id: contact.id,
-          name: contact.name || 'Unknown Contact',
+          name: `Contact: ${contact.phone_number}`,
           username: 'Not on doggo yet',
           profile_picture_url: null,
           phone_number: contact.phone_number,
           connection_type: 'unregistered' as const,
           isRegistered: false
+        })),
+
+        // Process second-degree connections
+        ...filteredSecondDegree.map(profile => ({
+          id: profile.id,
+          name: profile.name || 'User',
+          username: profile.username || '',
+          profile_picture_url: profile.profile_picture_url,
+          phone_number: profile.phone,
+          connection_type: 'second_degree' as const,
+          isRegistered: true
         }))
       ];
 
@@ -344,7 +448,7 @@ const SearchPage: React.FC = () => {
 
   const handleLikeUser = async (userId: string, name: string) => {
     try {
-      if (!user?.clerk_id) {
+      if (!contextUser?.id) {
         Alert.alert('Error', 'You must be logged in to like users.');
         return;
       }
@@ -353,14 +457,23 @@ const SearchPage: React.FC = () => {
       const { data: existingLike, error: checkError } = await supabase
         .from('likes')
         .select('id')
-        .eq('liker_id', user.clerk_id)
+        .eq('liker_id', contextUser.id)
         .eq('liked_id', userId)
         .single();
 
       if (checkError && checkError.code !== 'PGRST116') throw checkError;
 
       if (existingLike) {
-        Alert.alert('Already Liked', 'You have already liked this user.');
+        // Unlike the user
+        const { error: unlikeError } = await supabase
+          .from('likes')
+          .delete()
+          .eq('liker_id', contextUser.id)
+          .eq('liked_id', userId);
+
+        if (unlikeError) throw unlikeError;
+
+        Alert.alert('Unliked', `You have unliked ${name}.`);
         return;
       }
 
@@ -368,7 +481,7 @@ const SearchPage: React.FC = () => {
       const { error: likeError } = await supabase
         .from('likes')
         .insert([{
-          liker_id: user.clerk_id,
+          liker_id: contextUser.id,
           liked_id: userId
         }]);
 
@@ -379,7 +492,7 @@ const SearchPage: React.FC = () => {
         .from('likes')
         .select('id')
         .eq('liker_id', userId)
-        .eq('liked_id', user.clerk_id)
+        .eq('liked_id', contextUser.id)
         .single();
 
       if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
@@ -389,7 +502,7 @@ const SearchPage: React.FC = () => {
         const { error: matchError } = await supabase
           .from('matches')
           .insert([{
-            user1_id: user.id,
+            user1_id: contextUser.id,
             user2_id: userId
           }]);
 
@@ -400,14 +513,14 @@ const SearchPage: React.FC = () => {
           .from('notifications')
           .insert([
             {
-              user_id: user.id,
+              user_id: contextUser.id,
               type: 'match',
               data: { matched_user_id: userId }
             },
             {
               user_id: userId,
               type: 'match',
-              data: { matched_user_id: user.id }
+              data: { matched_user_id: contextUser.id }
             }
           ]);
 
@@ -419,7 +532,7 @@ const SearchPage: React.FC = () => {
           .insert([{
             user_id: userId,
             type: 'like',
-            data: { liker_id: user.clerk_id }
+            data: { liker_id: contextUser.id }
           }]);
 
         Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');
@@ -431,7 +544,7 @@ const SearchPage: React.FC = () => {
   };
 
   const handleLikeUnregistered = async (phone: string, name: string) => {
-    if (!user?.id) {
+    if (!contextUser?.id) {
       Alert.alert('Error', 'You must be logged in to like users.');
       return;
     }
@@ -441,7 +554,7 @@ const SearchPage: React.FC = () => {
       const { data: userProfile, error: profileError } = await supabase
         .from('profiles')
         .select('phone')
-        .eq('id', user.id)
+        .eq('id', contextUser.id)
         .single();
 
       if (profileError) throw profileError;
@@ -464,7 +577,7 @@ const SearchPage: React.FC = () => {
 
       // Send SMS invite
       const { data: response, error: smsError } = await supabase.functions.invoke('send-invite', {
-        body: { phone, fromUserName: user.name || 'Someone' }
+        body: { phone, fromUserName: contextUser.name || 'Someone' }
       });
 
       if (smsError) {
@@ -484,62 +597,23 @@ const SearchPage: React.FC = () => {
     }
   };
 
-  const renderUserItem = ({ item }: { item: ContactNetworkUser }) => (
-    <TouchableOpacity
-      style={styles.userItem}
-      onPress={() => {
-        if (item.isRegistered) {
-          navigation.navigate('ProfileDetails', { userId: item.id });
-        } else {
-          Alert.alert(
-            'Not on doggo yet',
-            `${item.name} hasn't joined doggo yet. Would you like to invite them?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Invite',
-                onPress: () => {
-                  if (item.phone_number) {
-                    handleLikeUnregistered(item.phone_number, item.name);
-                  }
-                },
-                style: 'default'
-              }
-            ]
-          );
-        }
-      }}
-    >
-      <Image
-        source={item.profile_picture_url ? { uri: item.profile_picture_url } : require('@assets/images/Default_pfp.svg.png')}
-        style={styles.userAvatar}
-      />
-      <View style={styles.userInfo}>
-        <Text style={styles.userName}>{item.name}</Text>
-        <Text style={styles.userUsername}>
-          {item.isRegistered ? `@${item.username}` : 'Not on doggo yet'}
-        </Text>
-        <Text style={styles.connectionType}>
-          {item.connection_type === 'direct'
-            ? 'Direct contact'
-            : item.connection_type === 'second_degree'
-              ? 'Friend of friend'
-              : 'Contact'}
-        </Text>
-      </View>
+  const renderUserItem = ({ item }: { item: ContactNetworkUser }) => {
+    // Determine what button to show based on user type
+    let actionButton = null;
 
-      {/* Like button only for registered users */}
-      {item.isRegistered && item.clerk_id && (
+    if (item.isRegistered) {
+      // Show like button for registered users
+      actionButton = (
         <TouchableOpacity
           style={styles.likeButton}
-          onPress={() => handleLikeUser(item.clerk_id as string, item.name)}
+          onPress={() => handleLikeUser(item.id, item.name)}
         >
           <Text style={styles.likeButtonText}>Like</Text>
         </TouchableOpacity>
-      )}
-
-      {/* Invite button for unregistered users */}
-      {!item.isRegistered && (
+      );
+    } else {
+      // Show invite button for unregistered contacts
+      actionButton = (
         <TouchableOpacity
           style={styles.inviteButton}
           onPress={() => {
@@ -550,9 +624,67 @@ const SearchPage: React.FC = () => {
         >
           <Text style={styles.inviteButtonText}>Invite</Text>
         </TouchableOpacity>
-      )}
-    </TouchableOpacity>
-  );
+      );
+    }
+
+    // Determine connection badge text
+    let connectionBadgeText = '';
+    switch (item.connection_type) {
+      case 'direct':
+        connectionBadgeText = 'Direct contact';
+        break;
+      case 'second_degree':
+        connectionBadgeText = 'Friend of friend';
+        break;
+      case 'unregistered':
+        connectionBadgeText = 'Contact';
+        break;
+      default:
+        connectionBadgeText = 'User';
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.userItem}
+        onPress={() => {
+          if (item.isRegistered) {
+            navigation.navigate('ProfileDetails', { userId: item.id });
+          } else {
+            Alert.alert(
+              'Not on doggo yet',
+              `${item.name} hasn't joined doggo yet. Would you like to invite them?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Invite',
+                  onPress: () => {
+                    if (item.phone_number) {
+                      handleLikeUnregistered(item.phone_number, item.name);
+                    }
+                  },
+                  style: 'default'
+                }
+              ]
+            );
+          }
+        }}
+      >
+        <Image
+          source={item.profile_picture_url ? { uri: item.profile_picture_url } : require('@assets/images/Default_pfp.svg.png')}
+          style={styles.userAvatar}
+        />
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{item.name}</Text>
+          <Text style={styles.userUsername}>
+            {item.isRegistered ? `@${item.username}` : 'Not on doggo yet'}
+          </Text>
+          <Text style={styles.connectionType}>{connectionBadgeText}</Text>
+        </View>
+
+        {actionButton}
+      </TouchableOpacity>
+    );
+  };
 
   const renderExplorePost = ({ item, index }: { item: Post; index: number }) => {
     const isEven = index % 2 === 0;
@@ -622,24 +754,26 @@ const SearchPage: React.FC = () => {
 
           <View style={styles.contentContainer}>
             {query ? (
-              <FlatList
-                data={contactNetworkUsers}
-                keyExtractor={(item) => item.id}
-                renderItem={renderUserItem}
-                onScroll={onScroll}
-                refreshControl={
-                  <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-                }
-                ListEmptyComponent={
-                  searchLoading ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color={colors.primary} />
-                    </View>
-                  ) : (
-                    renderEmptyState()
-                  )
-                }
-              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sectionTitle}>People</Text>
+                {loading ? (
+                  <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
+                ) : contactNetworkUsers.length > 0 ? (
+                  <FlatList
+                    data={contactNetworkUsers}
+                    renderItem={renderUserItem}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                  />
+                ) : (
+                  <View style={styles.noResultsContainer}>
+                    <Text style={styles.noResultsText}>
+                      No results found. Try a different search term or
+                      invite someone new to join doggo!
+                    </Text>
+                  </View>
+                )}
+              </View>
             ) : (
               <FlatList
                 data={explorePosts}
@@ -670,7 +804,7 @@ const SearchPage: React.FC = () => {
               setSelectedPost(null);
             }}
             onDelete={handleDeletePost}
-            isOwner={selectedPost?.user_id === user?.id}
+            isOwner={selectedPost?.user_id === contextUser?.id}
           />
         </View>
       </TouchableWithoutFeedback>
@@ -702,59 +836,60 @@ const styles = StyleSheet.create({
   userItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    borderBottomColor: '#EEEEEE',
+  },
+  userAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 16,
   },
   userInfo: {
     flex: 1,
   },
   userName: {
     fontSize: 16,
-    color: colors.textPrimary,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#333333',
   },
   userUsername: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#666666',
     marginTop: 2,
   },
   connectionType: {
     fontSize: 12,
-    color: customColors.textTertiary,
-    marginTop: 2,
-  },
-  userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-    backgroundColor: colors.divider,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#EEEEEE',
+    color: '#666666',
+    alignSelf: 'flex-start',
   },
   likeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: colors.primary,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#F85D7F',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   likeButtonText: {
-    color: customColors.white,
-    fontWeight: '500',
+    color: 'white',
+    fontWeight: '600',
     fontSize: 14,
   },
   inviteButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: colors.secondary,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#4A7DFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   inviteButtonText: {
-    color: customColors.white,
-    fontWeight: '500',
+    color: 'white',
+    fontWeight: '600',
     fontSize: 14,
   },
   loadingContainer: {
@@ -781,6 +916,24 @@ const styles = StyleSheet.create({
   caption: {
     fontSize: 14,
     color: colors.textPrimary,
+  },
+  noResultsContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 40,
+  },
+  noResultsText: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 16,
   },
 });
 

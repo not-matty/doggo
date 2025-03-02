@@ -6,6 +6,7 @@ import { useNavigation, NavigationProp } from '@react-navigation/native';
 import { SearchStackParamList, User } from '@navigation/types';
 import { colors, spacing, typography, shadows } from '@styles/theme';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
 
 type UserItemProps = {
   profile: User;
@@ -17,11 +18,17 @@ type NavigationType = NavigationProp<SearchStackParamList, 'SearchPage'>;
 
 const UserItem: React.FC<UserItemProps> = ({ profile }) => {
   const navigation = useNavigation<NavigationType>();
-  const { user: authUser } = useContext(AuthContext);
+
+  // Use both contexts, prioritizing the Clerk one
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Choose which auth context to use with safe null checking
+  const contextUser = clerkAuthContext?.user || authContext?.user;
 
   const navigateToProfile = () => {
     // If it's the current user's profile, navigate directly to the Profile tab
-    if (authUser?.id === profile.id) {
+    if (contextUser?.id === profile.id) {
       // @ts-ignore - Navigating to root tab
       navigation.navigate('Profile');
     } else {

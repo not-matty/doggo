@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { supabase, clerkIdToUuid } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
 import EmptyState from '@components/common/EmptyState';
 import { User } from '@navigation/types';
 import { useNavigation } from '@react-navigation/native';
@@ -54,7 +55,14 @@ const LikesScreen: React.FC = () => {
     const [matches, setMatches] = useState<Match[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const { user } = useContext(AuthContext);
+
+    // Use both contexts, prioritizing the Clerk one
+    const authContext = useContext(AuthContext);
+    const clerkAuthContext = useClerkAuthContext();
+
+    // Choose which auth context to use
+    const contextUser = clerkAuthContext?.user || authContext?.user;
+
     const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
 
     useEffect(() => {

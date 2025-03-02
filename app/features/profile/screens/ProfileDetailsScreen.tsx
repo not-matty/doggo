@@ -23,6 +23,7 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { ProfileStackParamList, User, Post } from '@navigation/types';
 import { supabase } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
 import { colors, spacing, typography, layout } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { Feather } from '@expo/vector-icons';
@@ -74,7 +75,12 @@ const ProfileDetailsScreen: React.FC = () => {
   const route = useRoute<ProfileDetailsRouteProp>();
   const { userId } = route.params;
   const { state: { profile: currentUserProfile } } = useApp();
-  const { user: authUser } = useContext(AuthContext);
+
+  // Access both auth contexts with safe null checking
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+  const contextUser = clerkAuthContext?.user || authContext?.user;
+
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState<string>('');
   const [posts, setPosts] = useState<Post[]>([]);
@@ -341,7 +347,7 @@ const ProfileDetailsScreen: React.FC = () => {
 
     try {
       // Get authenticated user ID from context or storage
-      let currentUserID = authUser?.id;
+      let currentUserID = contextUser?.id;
 
       if (!currentUserID) {
         // Try getting user ID from AsyncStorage
@@ -428,14 +434,14 @@ const ProfileDetailsScreen: React.FC = () => {
   };
 
   const handleLikeUser = async () => {
-    if (!user || !authUser) return;
+    if (!user || !contextUser) return;
 
     try {
       // Check if already liked
       const { data: existingLike, error: checkError } = await supabase
         .from('likes')
         .select('id')
-        .eq('liker_id', authUser.clerk_id)
+        .eq('liker_id', contextUser.clerk_id)
         .eq('liked_id', user.clerk_id)
         .single();
 
@@ -450,7 +456,7 @@ const ProfileDetailsScreen: React.FC = () => {
       const { error: likeError } = await supabase
         .from('likes')
         .insert([{
-          liker_id: authUser.clerk_id,
+          liker_id: contextUser.clerk_id,
           liked_id: user.clerk_id
         }]);
 
@@ -461,7 +467,7 @@ const ProfileDetailsScreen: React.FC = () => {
         .from('likes')
         .select('id')
         .eq('liker_id', user.clerk_id)
-        .eq('liked_id', authUser.clerk_id)
+        .eq('liked_id', contextUser.clerk_id)
         .single();
 
       if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
@@ -471,7 +477,7 @@ const ProfileDetailsScreen: React.FC = () => {
         const { error: matchError } = await supabase
           .from('matches')
           .insert([{
-            user1_id: authUser.id,
+            user1_id: contextUser.id,
             user2_id: user.id
           }]);
 
@@ -482,14 +488,14 @@ const ProfileDetailsScreen: React.FC = () => {
           .from('notifications')
           .insert([
             {
-              user_id: authUser.id,
+              user_id: contextUser.id,
               type: 'match',
               data: { matched_user_id: user.id }
             },
             {
               user_id: user.id,
               type: 'match',
-              data: { matched_user_id: authUser.id }
+              data: { matched_user_id: contextUser.id }
             }
           ]);
 
@@ -501,7 +507,7 @@ const ProfileDetailsScreen: React.FC = () => {
           .insert([{
             user_id: user.id,
             type: 'like',
-            data: { liker_id: authUser.clerk_id }
+            data: { liker_id: contextUser.clerk_id }
           }]);
 
         Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');
@@ -520,7 +526,7 @@ const ProfileDetailsScreen: React.FC = () => {
     }
 
     // Ensure we have a valid user ID from auth context or AsyncStorage
-    let currentUserId = authUser?.id;
+    let currentUserId = contextUser?.id;
     if (!currentUserId) {
       try {
         const storedProfileId = await AsyncStorage.getItem('profile_id');
@@ -568,7 +574,7 @@ const ProfileDetailsScreen: React.FC = () => {
       const { data: response, error: smsError } = await supabase.functions.invoke('send-invite', {
         body: {
           phone: user.phone,
-          fromUserName: authUser?.name || 'Someone'
+          fromUserName: contextUser?.name || 'Someone'
         }
       });
 
@@ -706,7 +712,7 @@ const ProfileDetailsScreen: React.FC = () => {
         <Text style={styles.username}>@{user.username}</Text>
         {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
 
-        {authUser?.id !== user.id && (
+        {contextUser?.id !== user.id && (
           <TouchableOpacity
             style={[
               styles.likeButton,
@@ -777,7 +783,7 @@ const ProfileDetailsScreen: React.FC = () => {
           setSelectedPost(null);
         }}
         onDelete={handleDeletePost}
-        isOwner={selectedPost?.user_id === authUser?.id}
+        isOwner={selectedPost?.user_id === contextUser?.id}
       />
     </SafeAreaView>
   );
