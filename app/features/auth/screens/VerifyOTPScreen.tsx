@@ -29,7 +29,7 @@ type Props = {
   route: VerifyOTPScreenRouteProp;
 };
 
-const RESEND_COOLDOWN = 30; // seconds
+const RESEND_COOLDOWN = 60; // changed from 30 to 60 seconds
 
 const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
   const { signIn, setActive } = useSignIn();
@@ -37,9 +37,11 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
   const { phone } = route.params;
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
+    // Start the cooldown timer immediately when component mounts
     let timer: NodeJS.Timeout;
     if (cooldown > 0) {
       timer = setInterval(() => {
@@ -86,7 +88,7 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
     if (cooldown > 0) return;
 
     try {
-      setLoading(true);
+      setResending(true);
       await signIn!.create({
         identifier: phone,
         strategy: "phone_code",
@@ -97,7 +99,7 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
       console.error('Resend Code Error:', error);
       Alert.alert('Error', 'Failed to send new code. Please try again.');
     } finally {
-      setLoading(false);
+      setResending(false);
     }
   };
 
@@ -148,21 +150,25 @@ const VerifyOTPScreen: React.FC<Props> = ({ route }) => {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.resendButton,
-                (cooldown > 0 || loading) && styles.buttonDisabled
-              ]}
-              onPress={handleResendCode}
-              disabled={cooldown > 0 || loading}
-            >
-              <Text style={[
-                styles.resendButtonText,
-                (cooldown > 0 || loading) && styles.buttonDisabledText
-              ]}>
-                {cooldown > 0 ? `Resend Code (${cooldown}s)` : 'Resend Code'}
-              </Text>
-            </TouchableOpacity>
+            {cooldown > 0 ? (
+              <View style={styles.cooldownContainer}>
+                <Text style={styles.cooldownText}>
+                  Resend code available in {cooldown}s
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.resendButton, resending && styles.buttonDisabled]}
+                onPress={handleResendCode}
+                disabled={resending}
+              >
+                {resending ? (
+                  <ActivityIndicator color={colors.primary} size="small" />
+                ) : (
+                  <Text style={styles.resendButtonText}>Resend Verification Code</Text>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -223,10 +229,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   resendButton: {
+    backgroundColor: colors.surface,
     paddingVertical: spacing.lg,
     borderRadius: layout.borderRadius.lg,
     alignItems: 'center',
-    marginTop: spacing.md,
+    marginTop: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
   verifyButtonText: {
     color: colors.background,
@@ -243,6 +252,15 @@ const styles = StyleSheet.create({
   },
   buttonDisabledText: {
     color: colors.textSecondary,
+  },
+  cooldownContainer: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  cooldownText: {
+    color: colors.textSecondary,
+    fontSize: typography.body.fontSize,
   },
 });
 
