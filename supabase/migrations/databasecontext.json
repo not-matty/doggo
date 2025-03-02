@@ -1,2582 +1,296 @@
 [
     {
       "table_name": "contacts",
-      "column_name": "contact_user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "contacts_contact_user_id_fkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "contacts",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "contacts_pkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "contacts",
       "column_name": "contact_user_id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "contact_user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "contact_user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "contacts",
       "column_name": "created_at",
       "data_type": "timestamp with time zone",
       "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "timezone('utc'::text, now())"
     },
     {
-      "table_name": "contacts",
+      "table_name": "likes",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "likes",
       "column_name": "liker_id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "likes_unique_pair",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "likes_pkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "likes_liker_id_fkey",
-      "ordinal_position": 1
+      "column_default": null
     },
     {
       "table_name": "likes",
       "column_name": "liked_id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "likes_liked_id_fkey",
-      "ordinal_position": 1
+      "column_default": null
     },
     {
       "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "likes_unique_pair",
-      "ordinal_position": 2
+      "column_default": "timezone('utc'::text, now())"
     },
     {
-      "table_name": "likes",
+      "table_name": "matches",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liked_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "liker_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "matches",
       "column_name": "user1_id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "matches_unique_users",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "matches_user1_id_fkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "matches_pkey",
-      "ordinal_position": 1
+      "column_default": null
     },
     {
       "table_name": "matches",
       "column_name": "user2_id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "matches_user2_id_fkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "matches_unique_users",
-      "ordinal_position": 2
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user1_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "matches",
       "column_name": "matched_at",
       "data_type": "timestamp with time zone",
       "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "matched_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "NO",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "matches",
-      "column_name": "user2_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "timezone('utc'::text, now())"
     },
     {
       "table_name": "notifications",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "notifications_pkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "is_read",
-      "data_type": "boolean",
-      "is_nullable": "YES",
-      "column_default": "false",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "is_read",
-      "data_type": "boolean",
-      "is_nullable": "YES",
-      "column_default": "false",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "is_read",
-      "data_type": "boolean",
-      "is_nullable": "YES",
-      "column_default": "false",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "data",
-      "data_type": "jsonb",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "data",
-      "data_type": "jsonb",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "data",
-      "data_type": "jsonb",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "notifications",
       "column_name": "user_id",
       "data_type": "uuid",
       "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "notifications",
       "column_name": "type",
       "data_type": "text",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "notifications",
-      "column_name": "type",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_name": "data",
+      "data_type": "jsonb",
+      "is_nullable": "YES",
+      "column_default": null
     },
     {
       "table_name": "notifications",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_name": "is_read",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "false"
     },
     {
       "table_name": "notifications",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "notifications",
-      "column_name": "type",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "photos_pkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "photos",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "photos_user_id_fkey",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "photos",
-      "column_name": "caption",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "caption",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "caption",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "caption",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "user_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
       "column_name": "created_at",
       "data_type": "timestamp with time zone",
       "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "timezone('utc'::text, now())"
     },
     {
       "table_name": "photos",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "photos",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": null
     },
     {
       "table_name": "photos",
       "column_name": "url",
       "data_type": "text",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "photos",
-      "column_name": "url",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "url",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "FOREIGN KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "url",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "photos",
-      "column_name": "url",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": "timezone('utc'::text, now())"
     },
     {
       "table_name": "photos",
       "column_name": "caption",
       "data_type": "text",
       "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "profiles_clerk_id_key",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "profiles_email_key",
-      "ordinal_position": 1
+      "column_default": null
     },
     {
       "table_name": "profiles",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "profiles_pkey",
-      "ordinal_position": 1
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
     },
     {
       "table_name": "profiles",
       "column_name": "username",
       "data_type": "text",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "profiles_username_key",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "profiles_phone_key",
-      "ordinal_position": 1
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "gen_random_uuid()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "clerk_id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "bio",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "profiles",
       "column_name": "profile_picture_url",
       "data_type": "text",
       "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "profile_picture_url",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "username",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "updated_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "likes",
-      "data_type": "integer",
-      "is_nullable": "YES",
-      "column_default": "0",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "profiles",
       "column_name": "email",
       "data_type": "text",
       "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "email",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "profiles",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
       "column_name": "phone",
       "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "likes",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "0"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": "timezone('utc'::text, now())"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": "timezone('utc'::text, now())"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "bio",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "clerk_id",
+      "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "unregistered_contacts_phone_key",
-      "ordinal_position": 1
+      "column_default": null
     },
     {
       "table_name": "unregistered_contacts",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "unregistered_contacts_pkey",
-      "ordinal_position": 1
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "unregistered_contacts",
       "column_name": "phone",
       "data_type": "text",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "unregistered_contacts",
       "column_name": "name",
       "data_type": "text",
       "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "name",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "unregistered_contacts",
       "column_name": "created_at",
       "data_type": "timestamp with time zone",
       "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "timezone('utc'::text, now())"
     },
     {
       "table_name": "unregistered_contacts",
       "column_name": "source",
       "data_type": "text",
       "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "source",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "source",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_contacts",
-      "column_name": "source",
-      "data_type": "text",
-      "is_nullable": "YES",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "unregistered_likes",
       "column_name": "id",
       "data_type": "uuid",
       "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "unregistered_likes_pkey",
-      "ordinal_position": 1
+      "column_default": "uuid_generate_v4()"
     },
     {
       "table_name": "unregistered_likes",
       "column_name": "liker_phone",
       "data_type": "text",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "unregistered_likes_liker_phone_liked_phone_key",
-      "ordinal_position": 1
+      "column_default": null
     },
     {
       "table_name": "unregistered_likes",
       "column_name": "liked_phone",
       "data_type": "text",
       "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "UNIQUE",
-      "constraint_name": "unregistered_likes_liker_phone_liked_phone_key",
-      "ordinal_position": 2
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": null
     },
     {
       "table_name": "unregistered_likes",
       "column_name": "created_at",
       "data_type": "timestamp with time zone",
       "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "created_at",
-      "data_type": "timestamp with time zone",
-      "is_nullable": "YES",
-      "column_default": "timezone('utc'::text, now())",
-      "constraint_type": "UNIQUE",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liker_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liker_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liker_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liker_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liked_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liked_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liked_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "PRIMARY KEY",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "liked_phone",
-      "data_type": "text",
-      "is_nullable": "NO",
-      "column_default": null,
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
-    },
-    {
-      "table_name": "unregistered_likes",
-      "column_name": "id",
-      "data_type": "uuid",
-      "is_nullable": "NO",
-      "column_default": "uuid_generate_v4()",
-      "constraint_type": "CHECK",
-      "constraint_name": "NONE",
-      "ordinal_position": null
+      "column_default": "timezone('utc'::text, now())"
     }
   ]

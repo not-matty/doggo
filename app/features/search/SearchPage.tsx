@@ -157,11 +157,11 @@ const SearchPage: React.FC = () => {
             created_at: post.created_at,
             user_id: post.user_id,
             user: {
-              id: post.user?.id || '',
-              name: post.user?.name || '',
-              username: post.user?.username || '',
-              profile_picture_url: post.user?.profile_picture_url || null,
-              clerk_id: post.user?.clerk_id || ''
+              id: post.user?.[0]?.id || '',
+              name: post.user?.[0]?.name || '',
+              username: post.user?.[0]?.username || '',
+              profile_picture_url: post.user?.[0]?.profile_picture_url || null,
+              clerk_id: post.user?.[0]?.clerk_id || ''
             }
           }));
 
@@ -202,7 +202,7 @@ const SearchPage: React.FC = () => {
         }
 
         // First try our new RPC function
-        const { data: searchResults, error: searchError } = await supabase.rpc<SearchResult, any>(
+        const { data: searchResults, error: searchError } = await supabase.rpc(
           'search_contact_network',
           { search_term: searchQuery }
         );
@@ -281,12 +281,12 @@ const SearchPage: React.FC = () => {
       const combinedResults: ContactNetworkUser[] = [
         ...(directContacts || []).map(contact => ({
           id: contact.contact_user_id || contact.id,
-          name: contact.profiles?.name || contact.name || 'Unknown',
-          username: contact.profiles?.username || 'Unknown',
-          profile_picture_url: contact.profiles?.profile_picture_url || null,
+          name: contact.profiles?.[0]?.name || contact.name || 'Unknown',
+          username: contact.profiles?.[0]?.username || 'Unknown',
+          profile_picture_url: contact.profiles?.[0]?.profile_picture_url || null,
           phone_number: contact.phone_number,
           connection_type: 'direct' as const,
-          clerk_id: contact.profiles?.clerk_id || null,
+          clerk_id: contact.profiles?.[0]?.clerk_id || null,
           isRegistered: true
         })),
         ...(unregisteredContacts || []).map(contact => ({
@@ -601,10 +601,7 @@ const SearchPage: React.FC = () => {
     if (contactsStats && contactsStats.total === 0) {
       return (
         <EmptyState
-          message="No contacts found"
-          description="To find friends, allow doggo to access your contacts"
-          actionText="Import Contacts"
-          onAction={() => checkContactsPermission()}
+          message="No contacts found."
         />
       );
     }
@@ -613,7 +610,7 @@ const SearchPage: React.FC = () => {
       return <EmptyState message="No users found matching your search" />;
     }
 
-    return <EmptyState message="No posts to explore. Find friends to see their photos!" />;
+    return <EmptyState message="No posts" />;
   };
 
   return (
