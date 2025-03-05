@@ -291,40 +291,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       console.log(`Found ${data.length} contacts, processing for import`);
-      // Process contacts to extract needed information
-      const processedContacts = data
-        .filter(contact => contact.phoneNumbers && contact.phoneNumbers.length > 0)
-        .map(contact => {
-          // Process each phone number
-          return contact.phoneNumbers?.map(phone => ({
-            user_id: currentUser.id,
-            name: contact.name || 'Unknown',
-            phone_number: normalizePhoneNumber(phone.number || ''),
-            first_name: contact.firstName || '',
-            last_name: contact.lastName || '',
-            imported_at: new Date().toISOString(),
-          })) || [];
-        })
-        .flat()
-        .filter(contact => contact.phone_number.length >= 10); // Ensure valid phone numbers
 
-      if (processedContacts.length === 0) {
-        console.log('No valid contacts found after processing');
-        await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
-        await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, new Date().getTime().toString());
-        return;
-      }
-
-      // Match contacts with existing user profiles
-      const matchedContacts = await matchContactsWithUsers(currentUser, processedContacts);
-
-      console.log(`Saving ${matchedContacts.length} contacts to database`);
-      // Batch insert contacts into database
-      // First, get existing contacts to avoid duplicates
+      // Get existing contacts to avoid duplicates
       const { data: existingContacts, error: fetchError } = await supabase
         .from('contacts')
         .select('phone_number')
-        .eq('user_id', currentUser.id);
+        .eq('owner_id', currentUser.id);
 
       if (fetchError) {
         console.error('Error fetching existing contacts:', fetchError);
@@ -336,65 +308,83 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         existingContacts?.map(contact => contact.phone_number) || []
       );
 
-      // Filter out existing contacts
-      const newContacts = matchedContacts.filter(
-        contact => !existingPhoneNumbers.has(contact.phone_number)
-      );
+      // Process contacts for bulk insert, filtering out duplicates
+      const contactsToInsert = [];
 
-      if (newContacts.length > 0) {
-        console.log(`Inserting ${newContacts.length} new contacts`);
-        // Break into smaller batches to avoid payload size limits
-        const batchSize = 100;
-        for (let i = 0; i < newContacts.length; i += batchSize) {
-          const batch = newContacts.slice(i, i + batchSize);
-          const { error: insertError } = await supabase
-            .from('contacts')
-            .upsert(batch, { onConflict: 'user_id,phone_number' });
+      for (const contact of data) {
+        if (!contact.phoneNumbers || contact.phoneNumbers.length === 0) continue;
 
-          if (insertError) {
-            console.error(`Error inserting contacts batch ${i}-${i + batch.length}:`, insertError);
-            throw insertError;
-          }
+        for (const phoneObj of contact.phoneNumbers) {
+          if (!phoneObj.number) continue;
+
+          const phoneNumber = normalizePhoneNumber(phoneObj.number);
+
+          // Skip if this number is already in the database
+          if (existingPhoneNumbers.has(phoneNumber)) continue;
+
+          // Skip if this number is the user's own number
+          if (phoneNumber === currentUser.phone) continue;
+
+          contactsToInsert.push({
+            owner_id: currentUser.id,
+            phone_number: phoneNumber,
+            name: contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Unknown',
+            is_imported: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+
+          // Add to our set to prevent duplicates within this batch
+          existingPhoneNumbers.add(phoneNumber);
         }
-        console.log('Successfully imported contacts');
-      } else {
+      }
+
+      if (contactsToInsert.length === 0) {
         console.log('No new contacts to import');
+        await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
+        await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, new Date().getTime().toString());
+        return;
       }
 
-      // Update existing contacts for matches
-      const existingContactsToUpdate = matchedContacts.filter(
-        contact => existingPhoneNumbers.has(contact.phone_number) && contact.contact_user_id
-      );
+      console.log(`Importing ${contactsToInsert.length} new contacts`);
 
-      if (existingContactsToUpdate.length > 0) {
-        console.log(`Updating ${existingContactsToUpdate.length} existing contacts with user matches`);
+      // Split into batches to avoid payload size limits
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < contactsToInsert.length; i += BATCH_SIZE) {
+        const batch = contactsToInsert.slice(i, i + BATCH_SIZE);
+        console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(contactsToInsert.length / BATCH_SIZE)}`);
 
-        for (const contact of existingContactsToUpdate) {
-          const { error: updateError } = await supabase
-            .from('contacts')
-            .update({
-              contact_user_id: contact.contact_user_id,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', currentUser.id)
-            .eq('phone_number', contact.phone_number);
+        const { error: insertError } = await supabase
+          .from('contacts')
+          .upsert(batch, { onConflict: 'owner_id,phone_number' });
 
-          if (updateError) {
-            console.error(`Error updating contact match for ${contact.phone_number}:`, updateError);
-            // Continue with other updates even if one fails
-          }
+        if (insertError) {
+          console.error(`Error inserting batch ${i}-${i + batch.length}:`, insertError);
+          // Continue with other batches even if one fails
         }
       }
 
-      // Mark contacts as imported
+      console.log('Contacts import complete, matching with existing users');
+
+      // Now match contacts with existing profiles
+      const { data: matchedContacts, error: matchError } = await supabase.rpc(
+        'match_contacts_with_profiles',
+        { user_id: currentUser.id }
+      );
+
+      if (matchError) {
+        console.error('Error matching contacts with profiles:', matchError);
+      } else {
+        console.log(`Matched ${matchedContacts} contacts with existing users`);
+      }
+
       await AsyncStorage.setItem(`hasImportedContacts_${currentUser.id}`, 'true');
       await AsyncStorage.setItem(`lastContactsUpdate_${currentUser.id}`, new Date().getTime().toString());
-      return true;
+
+      console.log('Contacts import and matching completed successfully');
     } catch (error) {
-      console.error('Error in refreshContactsOnLogin:', error);
-      // Even if there's an error, don't set hasImportedContacts to false if it was true before
-      // This prevents repeated attempts if there's a persistent error
-      return false;
+      console.error('Error refreshing contacts:', error);
+      // Don't mark as imported if there was an error
     }
   };
 

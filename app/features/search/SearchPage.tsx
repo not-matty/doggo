@@ -18,6 +18,8 @@ import {
   RefreshControl,
   StatusBar,
   ScrollView,
+  ActionSheetIOS,
+  Share,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -33,6 +35,11 @@ import { colors, spacing, typography } from '@styles/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getContactsStats } from '../../utils/contactsHelper';
 import { CardSkeleton, GridSkeleton } from '@components/common/SkeletonLoader';
+import Toast from 'react-native-toast-message';
+import CachedImage from '@components/common/CachedImage';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { formatPhoneNumber } from '../../utils/formatters';
+import { getInitials } from '../../utils/textUtils';
 
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
@@ -63,16 +70,19 @@ type ContactNetworkUser = {
   isRegistered: boolean;
 };
 
-// Define a proper type for search results from RPC
+// Merge SearchResult with ContactNetworkUser to have a unified interface
 interface SearchResult {
-  id: string; // UUID from profiles.id
+  id: string;
   name: string;
-  username: string | null;
-  profile_picture_url: string | null;
-  phone_number: string | null;
-  is_registered: boolean;
+  username?: string;
+  phone?: string;
+  avatar_url?: string;
+  profile_picture_url?: string | null;  // For backward compatibility
+  phone_number?: string;  // For backward compatibility
   is_contact: boolean;
+  is_registered: boolean;
   connection_type: string;
+  isRegistered?: boolean;  // For backward compatibility
 }
 
 interface PhotoQueryResult {
@@ -97,7 +107,7 @@ interface PhotoQueryResult {
 const SearchPage: React.FC = () => {
   const navigation = useNavigation<SearchPageNavigationProp>();
   const [query, setQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<ContactNetworkUser[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [explorePosts, setExplorePosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -109,6 +119,7 @@ const SearchPage: React.FC = () => {
   const [leftColumn, setLeftColumn] = useState<Post[]>([]);
   const [rightColumn, setRightColumn] = useState<Post[]>([]);
   const [loadingStage, setLoadingStage] = useState<string>('Initializing...');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Use both contexts, prioritizing the Clerk one
   const authContext = useContext(AuthContext);
@@ -241,10 +252,10 @@ const SearchPage: React.FC = () => {
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('photos')
         .select(`
-          id,
-          url,
-          caption,
-          created_at,
+          id, 
+          url, 
+          caption, 
+          created_at, 
           user_id,
           profiles:profiles!user_id(id, name, username, profile_picture_url)
         `)
@@ -291,243 +302,207 @@ const SearchPage: React.FC = () => {
     }
   };
 
-  const performSearch = useCallback(
-    debounce(async (searchQuery: string) => {
-      if (searchQuery.trim() === '') {
-        setSearchResults([]);
-        setSearchActive(false);
-        return;
-      }
+  const searchContacts = async (query: string): Promise<SearchResult[]> => {
+    if (!query || query.trim() === '') {
+      setLoading(false);
+      return [];
+    }
 
-      setSearchActive(true);
-
-      try {
-        // Get profile ID from storage if user context is not available
-        const profileId = contextUser?.id || await AsyncStorage.getItem('profile_id');
-
-        // Validate profile ID before using it
-        if (!profileId) {
-          console.error('Search error: No valid profile ID available');
-          setSearchResults([]);
-          setSearchActive(false);
-          return;
-        }
-
-        // Use search_contacts_and_profiles which returns both registered and unregistered contacts
-        const { data: searchResults, error: searchError } = await supabase.rpc(
-          'search_contacts_and_profiles',
-          {
-            search_term: searchQuery,
-            current_user_id: profileId
-          }
-        );
-
-        if (searchError) {
-          console.error('Error with contact network search:', searchError);
-          // Fallback method - search through contacts directly
-          await fallbackSearch(searchQuery, profileId);
-        } else if (searchResults && searchResults.length > 0) {
-          // Process results from search_contacts_and_profiles
-          const processedResults: ContactNetworkUser[] = searchResults.map((result: SearchResult) => ({
-            id: result.id, // This is profiles.id (UUID)
-            name: result.name || 'Unknown',
-            username: result.username || 'Not on doggo yet',
-            profile_picture_url: result.profile_picture_url || null,
-            phone_number: result.phone_number || null,
-            connection_type: result.connection_type as 'direct' | 'second_degree' | 'unregistered',
-            isRegistered: result.is_registered
-          }));
-
-          // Sort results: Direct contacts first, then second-degree connections, then other users
-          const sortedResults = processedResults.sort((a, b) => {
-            // First prioritize registered vs unregistered
-            if (a.isRegistered && !b.isRegistered) return -1;
-            if (!a.isRegistered && b.isRegistered) return 1;
-
-            // Then prioritize by connection type
-            const connectionOrder = {
-              'direct': 0,
-              'second_degree': 1,
-              'unregistered': 2,
-              'network': 3
-            };
-
-            const aOrder = connectionOrder[a.connection_type] || 999;
-            const bOrder = connectionOrder[b.connection_type] || 999;
-
-            return aOrder - bOrder;
-          });
-
-          setSearchResults(sortedResults);
-        } else {
-          setSearchResults([]);
-        }
-      } catch (err) {
-        console.error('Search error:', err);
-        setSearchResults([]);
-        // Don't show alert to avoid disrupting UX for minor search errors
-      } finally {
-        setSearchActive(false);
-      }
-    }, 300),
-    [contextUser?.id]
-  );
-
-  const fallbackSearch = async (searchQuery: string, profileId: string) => {
     try {
-      // Start with direct contacts who are on the app
-      const { data: directContacts, error: directError } = await supabase
-        .from('contacts')
-        .select(`
-          id,
-          phone_number,
-          owner_id,
-          contact_user_id,
-          profiles:contact_user_id (
-            id,
-            name,
-            username,
-            profile_picture_url
-          )
-        `)
-        .eq('owner_id', profileId)
-        .not('contact_user_id', 'is', null)
-        .filter('phone_number', 'ilike', `%${searchQuery}%`)
-        .limit(10);
-
-      if (directError) {
-        console.error('Error fetching direct contacts by phone:', directError);
-      }
-
-      // Search for direct contacts by name or username
-      const { data: directContactsByName, error: directNameError } = await supabase
-        .from('contacts')
-        .select(`
-          id,
-          phone_number,
-          owner_id,
-          contact_user_id,
-          profiles!contact_user_id (
-            id,
-            name,
-            username,
-            profile_picture_url
-          )
-        `)
-        .eq('owner_id', profileId)
-        .not('contact_user_id', 'is', null)
-        .or(`profiles.name.ilike.%${searchQuery}%,profiles.username.ilike.%${searchQuery}%`)
-        .limit(10);
-
-      if (directNameError) {
-        console.error('Error searching contacts by name:', directNameError);
-      }
-
-      // Get unregistered contacts
-      const { data: unregisteredContacts, error: unregisteredError } = await supabase
-        .from('contacts')
-        .select(`
-          id,
-          phone_number
-        `)
-        .eq('owner_id', profileId)
-        .is('contact_user_id', null)
-        .filter('phone_number', 'ilike', `%${searchQuery}%`)
-        .limit(10);
-
-      if (unregisteredError) {
-        console.error('Error fetching unregistered contacts:', unregisteredError);
-      }
-
-      // Try to get second-degree connections (contacts of contacts)
-      const { data: secondDegreeContacts, error: secondDegreeError } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          name,
-          username,
-          profile_picture_url,
-          phone
-        `)
-        .not('id', 'eq', profileId)
-        .or(`name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
-        .limit(20);
-
-      if (secondDegreeError) {
-        console.error('Error fetching second-degree connections:', secondDegreeError);
-      }
-
-      // Combine direct contacts from both queries
-      const allDirectContacts = [
-        ...(directContacts || []),
-        ...(directContactsByName || [])
-      ];
-
-      // Remove duplicates by ID
-      const uniqueDirectContacts = allDirectContacts.filter((contact, index, self) =>
-        index === self.findIndex((c) => c.id === contact.id)
+      // Use the new search_contacts_and_profiles function
+      const { data, error } = await supabase.rpc(
+        'search_contacts_and_profiles',
+        { search_term: query }
       );
 
-      // Get IDs of direct contacts to exclude them from the second-degree list
-      const directContactIds = uniqueDirectContacts
-        .map(contact => contact.profiles?.[0]?.id)
-        .filter(id => id !== undefined);
+      if (error) {
+        console.error('Search error:', error);
+        throw error;
+      }
 
-      // Filter second-degree contacts to exclude direct contacts
-      const filteredSecondDegree = (secondDegreeContacts || [])
-        .filter(profile => !directContactIds.includes(profile.id));
+      if (!data || data.length === 0) {
+        return [];
+      }
 
-      // Combine all results
-      const combinedResults: ContactNetworkUser[] = [
-        // Process direct contacts
-        ...uniqueDirectContacts.map(contact => ({
-          id: contact.profiles?.[0]?.id || contact.id,
-          name: contact.profiles?.[0]?.name || 'Contact',
-          username: contact.profiles?.[0]?.username || 'Unknown',
-          profile_picture_url: contact.profiles?.[0]?.profile_picture_url || null,
-          phone_number: contact.phone_number,
-          connection_type: 'direct' as const,
-          isRegistered: true
-        })),
-
-        // Process unregistered contacts
-        ...(unregisteredContacts || []).map(contact => ({
-          id: contact.id,
-          name: `Contact: ${contact.phone_number}`,
-          username: 'Not on doggo yet',
-          profile_picture_url: null,
-          phone_number: contact.phone_number,
-          connection_type: 'unregistered' as const,
-          isRegistered: false
-        })),
-
-        // Process second-degree connections
-        ...filteredSecondDegree.map(profile => ({
-          id: profile.id,
-          name: profile.name || 'User',
-          username: profile.username || '',
-          profile_picture_url: profile.profile_picture_url,
-          phone_number: profile.phone,
-          connection_type: 'second_degree' as const,
-          isRegistered: true
-        }))
-      ];
-
-      setSearchResults(combinedResults);
+      // Transform the results to match the expected format
+      return data.map((result: any) => ({
+        id: result.id,
+        name: result.name || 'Unknown',
+        username: result.username || '',
+        phone: result.phone || '',
+        phone_number: result.phone || '',  // For backward compatibility
+        avatar_url: result.avatar_url || null,
+        profile_picture_url: result.avatar_url || null,  // For backward compatibility
+        is_contact: result.is_contact,
+        is_registered: result.is_registered,
+        isRegistered: result.is_registered,  // For backward compatibility
+        connection_type: result.connection_type
+      }));
     } catch (error) {
-      console.error('Fallback search error:', error);
-      setSearchResults([]);
+      console.error('Error searching contacts:', error);
+      return [];
     }
   };
 
-  useEffect(() => {
-    if (query) {
-      performSearch(query);
+  // Function to handle navigating to a profile
+  const navigateToProfile = (item: SearchResult) => {
+    if (item.is_registered) {
+      navigation.navigate('ProfileDetails', { userId: item.id });
     } else {
-      setSearchResults([]);
+      // Show a modal or alert explaining that this contact is not registered
+      Alert.alert(
+        'Unregistered Contact',
+        `${item.name} hasn't joined Doggo yet. Would you like to invite them?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Invite',
+            onPress: () => handleInvite(item.phone || '')
+          }
+        ]
+      );
     }
-    return performSearch.cancel;
-  }, [query, performSearch]);
+  };
+
+  // Function to handle inviting a contact
+  const handleInvite = async (phoneNumber: string) => {
+    if (!phoneNumber) {
+      Alert.alert('Error', 'No phone number available for this contact.');
+      return;
+    }
+
+    try {
+      // Use the device's share functionality to send an SMS
+      const message = `Hey! I'd like to connect with you on Doggo. Download the app here: [App Store Link]`;
+      await Share.share({
+        message,
+      });
+    } catch (error) {
+      console.error('Error sharing invite:', error);
+      Alert.alert('Error', 'Failed to share invitation.');
+    }
+  };
+
+  // Function to handle action button press
+  const handleActionPress = (item: any) => {
+    // Create action sheet options based on whether the contact is registered
+    const options = ['Cancel'];
+    const actions = ['cancel'];
+
+    if (item.is_registered) {
+      options.push('View Profile');
+      actions.push('view');
+    }
+
+    if (item.is_contact) {
+      options.push('Remove Contact');
+      actions.push('remove');
+    } else {
+      options.push('Add to Contacts');
+      actions.push('add');
+    }
+
+    if (!item.is_registered && item.phone) {
+      options.push('Invite to Doggo');
+      actions.push('invite');
+    }
+
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options,
+        cancelButtonIndex: 0,
+        destructiveButtonIndex: options.indexOf('Remove Contact'),
+      },
+      (buttonIndex) => {
+        const action = actions[buttonIndex];
+        if (action === 'view') {
+          navigateToProfile(item);
+        } else if (action === 'remove') {
+          handleRemoveContact(item);
+        } else if (action === 'add') {
+          handleAddContact(item);
+        } else if (action === 'invite') {
+          handleInvite(item.phone || '');
+        }
+      }
+    );
+  };
+
+  // Function to handle removing a contact
+  const handleRemoveContact = async (item: any) => {
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .delete()
+        .eq('owner_id', contextUser?.id)
+        .eq('id', item.id);
+
+      if (error) throw error;
+
+      // Update the results to reflect the change
+      setSearchResults(prevResults =>
+        prevResults.map(contact =>
+          contact.id === item.id
+            ? { ...contact, is_contact: false }
+            : contact
+        )
+      );
+
+      Toast.show({
+        type: 'success',
+        text1: 'Contact Removed',
+        text2: `${item.name} has been removed from your contacts.`,
+      });
+    } catch (error) {
+      console.error('Error removing contact:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to remove contact.',
+      });
+    }
+  };
+
+  // Function to handle adding a contact
+  const handleAddContact = async (item: any) => {
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .insert([{
+          owner_id: contextUser?.id,
+          contact_user_id: item.is_registered ? item.id : null,
+          phone_number: item.phone || '',
+          name: item.name,
+          is_imported: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+
+      if (error) throw error;
+
+      // Update the results to reflect the change
+      setSearchResults(prevResults =>
+        prevResults.map(contact =>
+          contact.id === item.id
+            ? { ...contact, is_contact: true }
+            : contact
+        )
+      );
+
+      Toast.show({
+        type: 'success',
+        text1: 'Contact Added',
+        text2: `${item.name} has been added to your contacts.`,
+      });
+    } catch (error) {
+      console.error('Error adding contact:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to add contact.',
+      });
+    }
+  };
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -690,7 +665,7 @@ const SearchPage: React.FC = () => {
     }
   };
 
-  const renderUserItem = ({ item }: { item: ContactNetworkUser }) => {
+  const renderUserItem = ({ item }: { item: SearchResult }) => {
     // Determine connection badge text
     let connectionBadgeText = '';
     switch (item.connection_type) {
@@ -711,7 +686,7 @@ const SearchPage: React.FC = () => {
       <TouchableOpacity
         style={styles.userItem}
         onPress={() => {
-          if (item.isRegistered) {
+          if (item.is_registered) {
             navigation.navigate('ProfileDetails', { userId: item.id });
           } else {
             Alert.alert(
@@ -734,7 +709,9 @@ const SearchPage: React.FC = () => {
         }}
       >
         <Image
-          source={item.profile_picture_url ? { uri: item.profile_picture_url } : require('@assets/images/Default_pfp.svg.png')}
+          source={item.profile_picture_url
+            ? { uri: item.profile_picture_url }
+            : require('@assets/images/Default_pfp.svg.png')}
           style={styles.userAvatar}
         />
         <View style={styles.userInfo}>
@@ -795,8 +772,23 @@ const SearchPage: React.FC = () => {
   };
 
   const renderEmptyState = () => {
-    // If user has no contacts, show a different message
-    if (contactsStats && contactsStats.total === 0) {
+    if (searchQuery && !loading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <MaterialCommunityIcons name="account-search" size={64} color="#888" />
+          <Text style={styles.emptyTitle}>No Results Found</Text>
+          <Text style={styles.emptyMessage}>
+            We couldn't find any matches for "{searchQuery}". Try a different search term.
+          </Text>
+        </View>
+      );
+    } else if (query && !loading) {
+      return (
+        <EmptyState
+          message="No users found matching your search"
+        />
+      );
+    } else if (contactsStats && contactsStats.total === 0) {
       return (
         <EmptyState
           message="No contacts found."
@@ -804,11 +796,7 @@ const SearchPage: React.FC = () => {
       );
     }
 
-    if (query) {
-      return <EmptyState message="No users found matching your search" />;
-    }
-
-    return <EmptyState message="No posts" />;
+    return null;
   };
 
   // Calculate image heights based on original aspect ratios
@@ -876,26 +864,6 @@ const SearchPage: React.FC = () => {
     setRightColumn(right);
   }, [explorePosts, imageHeights]);
 
-  // Use useCallback for search function to prevent recreation on every render
-  const searchUsers = useCallback(async (searchText: string) => {
-    if (!searchText || searchText.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    setLoading(true);
-    setLoadingStage('Searching users...');
-
-    try {
-      // Existing search code
-    } catch (error) {
-      console.error('Error searching:', error);
-      Alert.alert('Error', 'Failed to search. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);  // Remove dependency on currentProfileId that doesn't exist
-
   // Memoize the ListEmptyComponent for better performance
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
@@ -907,7 +875,9 @@ const SearchPage: React.FC = () => {
         </View>
       ) : query.length > 0 ? (
         <EmptyState
-          message="No results found. Try a different search term"
+          icon="search"
+          title="No results found"
+          message="Try a different search term"
         />
       ) : null}
     </View>
@@ -921,11 +891,34 @@ const SearchPage: React.FC = () => {
         <GridSkeleton columns={2} items={6} />
       ) : (
         <View style={styles.gridContainer}>
-          {/* Original grid code */}
+          {/* Existing grid code */}
         </View>
       )}
     </>
-  ), [loading, explorePosts]);  // Remove handleTapPost dependency that doesn't exist
+  ), [loading, explorePosts]);
+
+  // Function to initiate the search
+  const handleSearch = async (value: string) => {
+    const searchValue = value.trim();
+    setSearchQuery(searchValue);
+
+    if (!searchValue) {
+      setSearchResults([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const searchResults = await searchContacts(searchValue);
+      setSearchResults(searchResults);
+    } catch (error) {
+      console.error('Search error:', error);
+      Alert.alert('Search Error', 'Something went wrong while searching.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1190,6 +1183,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    marginBottom: 16,
+  },
+  emptyMessage: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });
 
