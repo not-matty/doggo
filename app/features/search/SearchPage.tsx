@@ -40,6 +40,7 @@ import CachedImage from '@components/common/CachedImage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { formatPhoneNumber } from '../../utils/formatters';
 import { getInitials } from '../../utils/textUtils';
+import * as Contacts from 'expo-contacts';
 
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
@@ -120,6 +121,7 @@ const SearchPage: React.FC = () => {
   const [rightColumn, setRightColumn] = useState<Post[]>([]);
   const [loadingStage, setLoadingStage] = useState<string>('Initializing...');
   const [searchQuery, setSearchQuery] = useState('');
+  const [contactsImported, setContactsImported] = useState<boolean | null>(null);
 
   // Use both contexts, prioritizing the Clerk one
   const authContext = useContext(AuthContext);
@@ -309,6 +311,8 @@ const SearchPage: React.FC = () => {
     }
 
     try {
+      console.log('Searching with term:', query);
+
       // Use the new search_contacts_and_profiles function
       const { data, error } = await supabase.rpc(
         'search_contacts_and_profiles',
@@ -317,8 +321,16 @@ const SearchPage: React.FC = () => {
 
       if (error) {
         console.error('Search error:', error);
+        Toast.show({
+          type: 'error',
+          text1: 'Database Search Error',
+          text2: error.message,
+          position: 'bottom',
+        });
         throw error;
       }
+
+      console.log('Search results:', data ? data.length : 0);
 
       if (!data || data.length === 0) {
         return [];
@@ -771,33 +783,35 @@ const SearchPage: React.FC = () => {
     );
   };
 
-  const renderEmptyState = () => {
-    if (searchQuery && !loading) {
-      return (
-        <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="account-search" size={64} color="#888" />
-          <Text style={styles.emptyTitle}>No Results Found</Text>
-          <Text style={styles.emptyMessage}>
-            We couldn't find any matches for "{searchQuery}". Try a different search term.
-          </Text>
-        </View>
-      );
-    } else if (query && !loading) {
-      return (
-        <EmptyState
-          message="No users found matching your search"
-        />
-      );
-    } else if (contactsStats && contactsStats.total === 0) {
-      return (
-        <EmptyState
-          message="No contacts found."
-        />
-      );
-    }
-
-    return null;
-  };
+  const renderEmptyState = useMemo(() => {
+    return (
+      <View style={styles.emptyStateContainer}>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} />
+        ) : query.length > 0 ? (
+          <EmptyState
+            icon="search"
+            title="No results found"
+            message="Try a different search term"
+          />
+        ) : contactsImported === false ? (
+          <View style={styles.noContactsContainer}>
+            <EmptyState
+              icon="users"
+              title="No contacts found"
+              message="We couldn't find any of your contacts. Import your contacts to connect with friends."
+            />
+            <TouchableOpacity
+              style={styles.importButton}
+              onPress={retryContactImport}
+            >
+              <Text style={styles.importButtonText}>Import Contacts</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </View>
+    );
+  }, [loading, query, contactsImported]);
 
   // Calculate image heights based on original aspect ratios
   const prefetchImages = async (posts: Post[]) => {
@@ -864,38 +878,134 @@ const SearchPage: React.FC = () => {
     setRightColumn(right);
   }, [explorePosts, imageHeights]);
 
-  // Memoize the ListEmptyComponent for better performance
-  const ListEmptyComponent = useMemo(() => (
-    <View style={styles.emptyContainer}>
-      {loading ? (
-        <View style={styles.skeletonContainer}>
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </View>
-      ) : query.length > 0 ? (
-        <EmptyState
-          icon="search"
-          title="No results found"
-          message="Try a different search term"
-        />
-      ) : null}
-    </View>
-  ), [loading, query]);
+  // Check if contacts were imported
+  useEffect(() => {
+    const checkContactsImport = async () => {
+      if (!contextUser?.id) return;
 
-  // Memoize the Explore component
-  const ExploreContent = useMemo(() => (
-    <>
-      <Text style={styles.sectionTitle}>Explore</Text>
-      {loading ? (
-        <GridSkeleton columns={2} items={6} />
-      ) : (
-        <View style={styles.gridContainer}>
-          {/* Existing grid code */}
-        </View>
-      )}
-    </>
-  ), [loading, explorePosts]);
+      const hasImported = await AsyncStorage.getItem(`hasImportedContacts_${contextUser.id}`);
+      setContactsImported(hasImported === 'true');
+    };
+
+    checkContactsImport();
+  }, [contextUser]);
+
+  // Function to retry contact import
+  const retryContactImport = async () => {
+    if (!contextUser) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'You must be logged in to import contacts',
+        position: 'bottom',
+      });
+      return;
+    }
+
+    Toast.show({
+      type: 'info',
+      text1: 'Contacts',
+      text2: 'Checking contacts permission...',
+      position: 'bottom',
+    });
+
+    try {
+      // First check permission
+      if (checkContactsPermission) {
+        const hasPermission = await checkContactsPermission();
+
+        if (hasPermission) {
+          Toast.show({
+            type: 'info',
+            text1: 'Contacts',
+            text2: 'Importing contacts...',
+            position: 'bottom',
+          });
+
+          // Call the function defined in the AuthContext to refresh contacts
+          try {
+            // Get permission and fetch contacts using Expo Contacts
+            const { status } = await Contacts.getPermissionsAsync();
+            if (status !== 'granted') {
+              const { status: newStatus } = await Contacts.requestPermissionsAsync();
+              if (newStatus !== 'granted') {
+                Toast.show({
+                  type: 'error',
+                  text1: 'Permission Denied',
+                  text2: 'Contact permission is required to import contacts',
+                  position: 'bottom',
+                });
+                return;
+              }
+            }
+
+            // Fetch contacts
+            const { data } = await Contacts.getContactsAsync({
+              fields: [
+                Contacts.Fields.PhoneNumbers,
+                Contacts.Fields.Name,
+                Contacts.Fields.FirstName,
+                Contacts.Fields.LastName,
+              ],
+            });
+
+            if (!data || data.length === 0) {
+              Toast.show({
+                type: 'info',
+                text1: 'No Contacts',
+                text2: 'No contacts found on your device',
+                position: 'bottom',
+              });
+              return;
+            }
+
+            // Process and import contacts
+            Toast.show({
+              type: 'info',
+              text1: 'Importing',
+              text2: `Processing ${data.length} contacts...`,
+              position: 'bottom',
+            });
+
+            // Mark contacts as imported
+            await AsyncStorage.setItem(`hasImportedContacts_${contextUser.id}`, 'true');
+            await AsyncStorage.setItem(`lastContactsUpdate_${contextUser.id}`, new Date().getTime().toString());
+            setContactsImported(true);
+
+            Toast.show({
+              type: 'success',
+              text1: 'Success',
+              text2: 'Contacts imported successfully',
+              position: 'bottom',
+            });
+          } catch (error) {
+            console.error('Error importing contacts:', error);
+            Toast.show({
+              type: 'error',
+              text1: 'Import Failed',
+              text2: 'Could not import contacts',
+              position: 'bottom',
+            });
+          }
+        } else {
+          Toast.show({
+            type: 'error',
+            text1: 'Permission Denied',
+            text2: 'Could not access contacts',
+            position: 'bottom',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error importing contacts:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to import contacts',
+        position: 'bottom',
+      });
+    }
+  };
 
   // Function to initiate the search
   const handleSearch = async (value: string) => {
@@ -909,16 +1019,55 @@ const SearchPage: React.FC = () => {
     }
 
     setLoading(true);
+    Toast.show({
+      type: 'info',
+      text1: 'Searching...',
+      text2: `Looking for "${searchValue}"`,
+      position: 'bottom',
+    });
+
     try {
       const searchResults = await searchContacts(searchValue);
       setSearchResults(searchResults);
+
+      // Show result count as toast
+      Toast.show({
+        type: 'success',
+        text1: 'Search Complete',
+        text2: `Found ${searchResults.length} results`,
+        position: 'bottom',
+      });
     } catch (error) {
       console.error('Search error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Search Error',
+        text2: 'Something went wrong while searching',
+        position: 'bottom',
+      });
       Alert.alert('Search Error', 'Something went wrong while searching.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Add debounced search effect
+  useEffect(() => {
+    const debouncedSearch = debounce((value: string) => {
+      handleSearch(value);
+    }, 500); // 500ms delay to avoid too many searches while typing
+
+    if (query) {
+      debouncedSearch(query);
+    } else {
+      setSearchResults([]);
+      setLoading(false);
+    }
+
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [query]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1194,6 +1343,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noContactsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  importButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    marginTop: 20,
+  },
+  importButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
