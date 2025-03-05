@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useCallback, useMemo } from 'react';
 import {
     View,
     StyleSheet,
@@ -9,6 +9,7 @@ import {
     Text,
     Image,
     TouchableOpacity,
+    RefreshControl,
 } from 'react-native';
 import { supabase, clerkIdToUuid } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
@@ -20,6 +21,8 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { colors, spacing, typography } from '@styles/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MainStackParamList } from '@navigation/types';
+import { CardSkeleton } from '@components/common/SkeletonLoader';
+import { useUserLikes } from '../../../hooks/useLikes';
 
 interface Match {
     id: string;
@@ -55,6 +58,8 @@ const LikesScreen: React.FC = () => {
     const [matches, setMatches] = useState<Match[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [loadingStage, setLoadingStage] = useState<string>('Initializing...');
+    const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
 
     // Use both contexts, prioritizing the Clerk one
     const authContext = useContext(AuthContext);
@@ -65,6 +70,9 @@ const LikesScreen: React.FC = () => {
 
     const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
 
+    // Fetch using React Query if authenticated
+    const { data: userLikes, isLoading: likesLoading, refetch: refetchLikes } = useUserLikes(currentProfileId || undefined);
+
     useEffect(() => {
         // Only do initial fetch on first mount
         const initialFetch = async () => {
@@ -72,6 +80,7 @@ const LikesScreen: React.FC = () => {
             const profileId = await AsyncStorage.getItem('profile_id');
             if (profileId) {
                 console.log('Found profile ID in storage:', profileId);
+                setCurrentProfileId(profileId);
                 fetchMatches(profileId);
             } else {
                 console.log('No profile ID found in storage');
@@ -93,29 +102,31 @@ const LikesScreen: React.FC = () => {
         return () => clearTimeout(timeout);
     }, []);
 
-    const fetchMatches = async (profileId?: string) => {
+    const fetchMatches = useCallback(async (profileId?: string) => {
         if (loading && !refreshing) return; // Prevent multiple simultaneous calls
 
         try {
-            setLoading(true);
+            if (!refreshing) {
+                setLoading(true);
+                setLoadingStage('Fetching matches...');
+            }
 
-            // Get profile ID either from parameter or AsyncStorage
-            const currentProfileId = profileId || await AsyncStorage.getItem('profile_id');
-
-            // Ensure we have a valid profile ID
-            if (!currentProfileId) {
+            const currentId = profileId || currentProfileId;
+            if (!currentId) {
                 console.error('fetchMatches: Profile ID is missing');
                 setLoading(false);
+                setRefreshing(false);
                 return;
             }
 
-            console.log('Fetching matches for profile ID:', currentProfileId);
+            console.log('Fetching matches for profile ID:', currentId);
 
             // Validate UUID format
-            const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentProfileId);
+            const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentId);
             if (!isValidUuid) {
-                console.error(`Invalid UUID format for profile ID: ${currentProfileId}`);
+                console.error(`Invalid UUID format for profile ID: ${currentId}`);
                 setLoading(false);
+                setRefreshing(false);
                 return;
             }
 
@@ -123,7 +134,7 @@ const LikesScreen: React.FC = () => {
             const { data: sentLikes, error: sentLikesError } = await supabase
                 .from('likes')
                 .select('liked_id')
-                .eq('liker_id', currentProfileId);
+                .eq('liker_id', currentId);
 
             if (sentLikesError) {
                 console.error('Error fetching sent likes:', sentLikesError);
@@ -134,7 +145,7 @@ const LikesScreen: React.FC = () => {
             const { data: receivedLikes, error: receivedLikesError } = await supabase
                 .from('likes')
                 .select('liker_id')
-                .eq('liked_id', currentProfileId);
+                .eq('liked_id', currentId);
 
             if (receivedLikesError) {
                 console.error('Error fetching received likes:', receivedLikesError);
@@ -163,6 +174,7 @@ const LikesScreen: React.FC = () => {
             if (matchIds.length === 0) {
                 setMatches([]);
                 setLoading(false);
+                setLoadingStage('Matches loaded');
                 return;
             }
 
@@ -195,19 +207,31 @@ const LikesScreen: React.FC = () => {
             });
 
             setMatches(formattedMatches);
+            setLoadingStage('Matches loaded');
         } catch (error) {
             console.error('Error fetching matches:', error);
             Alert.alert(
                 'Error',
-                'Failed to load your matches. Please try again later.'
+                'Failed to load matches. Please try again.'
             );
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [currentProfileId, refreshing, loading]);
 
-    const navigateToProfile = (userId: string) => {
+    const handleRefresh = useCallback(async () => {
+        setRefreshing(true);
+        if (currentProfileId) {
+            await fetchMatches(currentProfileId);
+            if (refetchLikes) {
+                await refetchLikes();
+            }
+        }
+        setRefreshing(false);
+    }, [currentProfileId, fetchMatches, refetchLikes]);
+
+    const navigateToProfile = useCallback((userId: string) => {
         if (!userId) {
             console.error('navigateToProfile: Missing user ID');
             return;
@@ -231,55 +255,57 @@ const LikesScreen: React.FC = () => {
                 navigation.navigate('ProfileDetails', { userId });
             }
         });
-    };
+    }, [navigation]);
 
-    const renderMatch = ({ item }: { item: Match }) => (
+    // Memoize the render item for better performance
+    const renderItem = useCallback(({ item }: { item: Match }) => (
         <TouchableOpacity
-            style={styles.matchContainer}
+            style={styles.matchCard}
             onPress={() => navigateToProfile(item.user.id)}
         >
             <Image
                 source={{
-                    uri: item.user.profile_picture_url || 'https://via.placeholder.com/60'
+                    uri: item.user.profile_picture_url || 'https://via.placeholder.com/150'
                 }}
-                style={styles.profileImage}
+                style={styles.profilePic}
             />
             <View style={styles.matchInfo}>
-                <Text style={styles.nameText}>{item.user.name}</Text>
-                <Text style={styles.usernameText}>@{item.user.username}</Text>
-                <Text style={styles.matchedText}>
-                    Matched {new Date(item.matched_at).toLocaleDateString()}
-                </Text>
+                <Text style={styles.matchName}>{item.user.name}</Text>
+                <Text style={styles.matchUsername}>@{item.user.username}</Text>
             </View>
         </TouchableOpacity>
-    );
+    ), [navigateToProfile]);
 
-    const handleRefresh = () => {
-        setRefreshing(true);
-        fetchMatches();
-    };
-
-    if (loading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-        );
-    }
+    // Memoize the empty component
+    const EmptyComponent = useMemo(() => (
+        <View style={styles.emptyContainer}>
+            {loading ? (
+                <View style={styles.skeletonContainer}>
+                    <CardSkeleton />
+                    <CardSkeleton />
+                </View>
+            ) : (
+                <EmptyState
+                    message="No matches yet. Likes will appear here once you have mutual likes"
+                />
+            )}
+        </View>
+    ), [loading]);
 
     return (
         <SafeAreaView style={styles.container}>
+            <Text style={styles.title}>Matches</Text>
             <FlatList
                 data={matches}
                 keyExtractor={(item) => item.id}
-                renderItem={renderMatch}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.contentContainer}
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                ListEmptyComponent={
-                    <EmptyState
-                        message="No matches yet. When you and someone else like each other, you'll see them here"
+                renderItem={renderItem}
+                contentContainerStyle={styles.list}
+                ListEmptyComponent={EmptyComponent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={handleRefresh}
+                        tintColor={colors.primary}
                     />
                 }
             />
@@ -332,6 +358,49 @@ const styles = StyleSheet.create({
         fontSize: typography.caption.fontSize,
         color: colors.textSecondary,
         marginTop: 4,
+    },
+    matchCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: spacing.md,
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        marginBottom: spacing.md,
+    },
+    profilePic: {
+        width: 150,
+        height: 150,
+        borderRadius: 12,
+        marginRight: spacing.md,
+    },
+    matchName: {
+        fontSize: typography.title.fontSize,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    matchUsername: {
+        fontSize: typography.body.fontSize,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    skeletonContainer: {
+        width: '100%',
+        padding: 10,
+    },
+    title: {
+        fontSize: typography.title.fontSize,
+        fontWeight: '600',
+        color: colors.textPrimary,
+        padding: spacing.md,
+    },
+    list: {
+        padding: spacing.md,
     },
 });
 

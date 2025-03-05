@@ -1,17 +1,15 @@
 // app/features/profile/screens/ProfileDetailsScreen.tsx
 
-import React, { useEffect, useState, useContext, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Image,
   Dimensions,
-  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  ListRenderItem,
   Animated,
   Platform,
   StatusBar,
@@ -19,23 +17,28 @@ import {
   RefreshControl,
   ScrollView,
 } from 'react-native';
-import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
-import { ProfileStackParamList, User, Post } from '@navigation/types';
+import { RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { ProfileStackParamList } from '@navigation/types';
 import { supabase } from '@services/supabase';
-import { AuthContext } from '@context/AuthContext';
-import { useClerkAuthContext, Profile } from '@context/ClerkAuthContext';
-import { colors, spacing, typography, layout } from '@styles/theme';
+import { useClerkAuthContext } from '@context/ClerkAuthContext';
+import { colors, spacing, typography } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { Feather } from '@expo/vector-icons';
-import api from '@services/api';
 import * as Contacts from 'expo-contacts';
-import { useApp } from '@context/AppContext';
 import PhotoGrid from '@components/common/PhotoGrid';
-import ProfileHeader from '@components/profile/ProfileHeader';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProfile } from '../../../hooks/useProfile';
+import { useLikeStatus, useToggleLike, useUnregisteredLikeStatus, useToggleUnregisteredLike } from '../../../hooks/useLikes';
+import { useUserPosts, Photo } from '../../../hooks/usePosts';
+import { ProfileSkeleton } from '@components/common/SkeletonLoader';
 
 type ProfileDetailsRouteProp = RouteProp<ProfileStackParamList, 'ProfileDetails'>;
-type ProfileDetailsNavigationProp = any; // Assuming the navigation prop type
+type ProfileDetailsNavigationProp = StackNavigationProp<ProfileStackParamList, 'ProfileDetails'>;
+
+interface ProfileDetailsScreenProps {
+  route: ProfileDetailsRouteProp;
+  navigation: ProfileDetailsNavigationProp;
+}
 
 // Define type for unregistered contact explicitly
 interface UnregisteredContact {
@@ -46,6 +49,26 @@ interface UnregisteredContact {
   created_at: string;
 }
 
+// Define the Profile type
+interface Profile {
+  id: string;
+  name: string;
+  username: string;
+  profile_picture_url?: string;
+  bio?: string;
+  clerk_id?: string;
+  phone?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Add the PhotoGridPhoto type to avoid confusion with the imported Photo type
+interface PhotoGridPhoto {
+  id: string;
+  url: string;
+  [key: string]: any;
+}
+
 const { width } = Dimensions.get('window');
 const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 const HEADER_HEIGHT = 60;
@@ -54,588 +77,121 @@ const PROFILE_IMAGE_SIZE = 64;
 const HEADER_PADDING = 16;
 const PHOTO_GAP = 16;
 const GALLERY_COLUMN_WIDTH = (width - (HEADER_PADDING * 2) - PHOTO_GAP) / 2;
-const BACK_BUTTON_WIDTH = 40;
-const USERNAME_LEFT = HEADER_PADDING + BACK_BUTTON_WIDTH;
 
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Post>);
+const ProfileDetailsScreen = ({ route, navigation }: ProfileDetailsScreenProps) => {
+  const { userId, placeholderContact } = route.params;
+  const { user: contextUser } = useClerkAuthContext();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [photos, setPhotos] = useState<Photo[]>([]);
 
-const DEFAULT_PLACEHOLDER_USER: User = {
-  id: 'placeholder',
-  clerk_id: 'placeholder',
-  name: '',  // Will be filled in with actual name
-  username: '',
-  profile_picture_url: require('@assets/images/Default_pfp.svg.png'),
-  phone: '',  // Will be filled in with actual phone
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  is_placeholder: true,
-  bio: 'Tap like to send them an anonymous invite to join doggo!'
-};
+  // Type the profile data
+  const {
+    data: profile,
+    isLoading: isProfileLoading,
+    error: profileError,
+    refetch: refetchProfile
+  } = useProfile(userId);
 
-const ProfileDetailsScreen: React.FC = () => {
-  const navigation = useNavigation<ProfileDetailsNavigationProp>();
-  const route = useRoute<ProfileDetailsRouteProp>();
-  const { userId } = route.params;
-  const { state: { profile: currentUserProfile } } = useApp();
+  // Ensure we get properly typed posts data
+  const {
+    data: postsData,
+    isLoading: isPostsLoading,
+    refetch: refetchPosts
+  } = useUserPosts(userId);
 
-  // Access both auth contexts with safe null checking
-  const authContext = useContext(AuthContext);
-  const clerkAuthContext = useClerkAuthContext();
-  const contextUser = clerkAuthContext?.user || authContext?.user;
+  // Extract posts from the infinite query result with proper typing
+  const posts = postsData?.pages
+    ? postsData.pages.flatMap(page => (page as any).posts || [])
+    : [];
 
-  // Add isProfileOwner variable
-  const isProfileOwner = contextUser?.id === userId;
+  // Fix like status hooks to use proper profile id
+  const {
+    data: likeStatus,
+    isLoading: isLikeStatusLoading
+  } = useLikeStatus(
+    contextUser?.id,
+    profile?.id
+  );
 
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [displayName, setDisplayName] = useState<string>('');
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const scrollY = new Animated.Value(0);
-  const [isLikeLoading, setIsLikeLoading] = useState(true);
-  const [isLiked, setIsLiked] = useState(false);
+  // Use the like status hooks based on whether this is a registered or unregistered user
+  const {
+    data: unregisteredLikeStatus,
+    isLoading: isUnregisteredLikeStatusLoading
+  } = useUnregisteredLikeStatus(
+    contextUser?.id,
+    placeholderContact?.phone_number
+  );
+
+  // Like/unlike mutation hooks
+  const toggleLike = useToggleLike();
+  const toggleUnregisteredLike = useToggleUnregisteredLike();
+
+  // Local state
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
-  const [leftColumn, setLeftColumn] = useState<Post[]>([]);
-  const [rightColumn, setRightColumn] = useState<Post[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Photo | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
-  // Add a flag to track if checkIfLiked is already running
-  const isCheckingLikeRef = useRef(false);
+  // Derived state
+  const isProfileOwner = contextUser?.id === profile?.id;
+  const isLiked = profile ? likeStatus === 'liked' : unregisteredLikeStatus === 'liked';
+  const isLikeLoading = isLikeStatusLoading ||
+    isUnregisteredLikeStatusLoading ||
+    toggleLike.isPending ||
+    toggleUnregisteredLike.isPending;
 
-  const headerTranslateY = scrollY.interpolate({
-    inputRange: [0, TOTAL_HEADER_HEIGHT],
-    outputRange: [0, -TOTAL_HEADER_HEIGHT],
-    extrapolate: 'clamp'
-  });
-
-  const profileScale = scrollY.interpolate({
-    inputRange: [-100, 0, TOTAL_HEADER_HEIGHT],
-    outputRange: [1.2, 1, 0.8],
-    extrapolate: 'clamp'
-  });
-
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, TOTAL_HEADER_HEIGHT],
-    outputRange: [1, 0],
-    extrapolate: 'clamp'
-  });
-
-  useEffect(() => {
-    if (userId) {
-      // Reset loading and error states
-      setIsLikeLoading(true);
-      setErrorMessage(null);
-
-      // Load profile data
-      fetchProfile();
-
-      // Reset flag before checking
-      isCheckingLikeRef.current = false;
-      checkIfLiked();
-
-      // Remove timeout as it's causing issues
-      return () => { };
-    } else {
-      console.error('No userId provided to ProfileDetailsScreen');
-      setIsLikeLoading(false);
-      setErrorMessage('No user ID provided');
-    }
-  }, [userId]);
-
-  const getContactName = async (phoneNumber: string) => {
-    try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') return null;
-
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Name],
-      });
-
-      const normalizedSearchPhone = phoneNumber.replace(/[^0-9]/g, '');
-      const contact = data.find(contact =>
-        contact.phoneNumbers?.some(phone =>
-          phone.number && phone.number.replace(/[^0-9]/g, '') === normalizedSearchPhone
-        )
-      );
-
-      return contact?.name || null;
-    } catch (error) {
-      console.error('Error getting contact name:', error);
-      return null;
-    }
-  };
-
-  const fetchProfile = async () => {
-    try {
-      if (!userId) {
-        console.error('No userId provided for profile fetch');
-        setIsLikeLoading(false);
-        setErrorMessage('Missing user ID');
-        return;
-      }
-
-      // Check if we're dealing with a valid UUID before querying
-      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-
-      if (!isValidUuid) {
-        console.log('Invalid UUID format for userId:', userId);
-        setIsLikeLoading(false);
-        setErrorMessage('Invalid user ID format');
-        return;
-      }
-
-      // Fetch user profile
-      const { data: userData, error: userError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (userError) {
-        // Log detailed error for debugging
-        console.error('Error fetching profile:', userError);
-
-        // If user not found, they might be unregistered
-        // Check unregistered_contacts table
-        const { data: unregisteredData, error: unregisteredError } = await supabase
-          .from('unregistered_contacts')
-          .select('id, name, phone, user_id, created_at')
-          .eq('id', userId)
-          .single();
-
-        if (unregisteredError) {
-          console.error('Error fetching unregistered contact:', unregisteredError);
-
-          // Last attempt: Check if this is a contact by phone number
-          // This handles cases where we have a contact_user_id but not a direct UUID
-          if (userError.code === 'PGRST116' && /^\+\d+$/.test(userId)) {
-            // If userId looks like a phone number, try to find it in unregistered contacts
-            const { data: phoneData, error: phoneError } = await supabase
-              .from('unregistered_contacts')
-              .select('id, name, phone, user_id, created_at')
-              .eq('phone', userId)
-              .single();
-
-            if (!phoneError && phoneData) {
-              // Create a placeholder user with the unregistered contact's info
-              const placeholderUser: User = {
-                ...DEFAULT_PLACEHOLDER_USER,
-                id: phoneData.id,
-                name: phoneData.name,
-                phone: phoneData.phone,
-              };
-
-              setUser(placeholderUser);
-              setPosts([]); // No posts for unregistered users
-              setIsLikeLoading(false);
-              return;
-            }
-          }
-
-          setErrorMessage('Unable to find user profile');
-          setIsLikeLoading(false);
-          return;
-        }
-
-        // Create a placeholder user with the unregistered contact's info
-        const placeholderUser: User = {
-          ...DEFAULT_PLACEHOLDER_USER,
-          id: unregisteredData.id,
-          name: unregisteredData.name,
-          phone: unregisteredData.phone,
-        };
-
-        setUser(placeholderUser);
-        setPosts([]); // No posts for unregistered users
-        setIsLikeLoading(false);
-        return;
-      }
-
-      setUser(userData);
-      setErrorMessage(null); // Clear any previous errors
-
-      // Get contact name if this is an unregistered user
-      if (userData.phone) {
-        try {
-          const contactName = await getContactName(userData.phone);
-          setDisplayName(contactName || userData.username || 'Unknown User');
-        } catch (error) {
-          console.error('Error getting contact name:', error);
-          setDisplayName(userData.username || 'Unknown User');
-        }
-      }
-
-      // User exists, fetch their photos
-      const { data: postsData, error: postsError } = await supabase
-        .from('photos')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (postsError) {
-        console.error('Error fetching posts:', postsError);
-      } else if (postsData) {
-        setPosts(postsData);
-      }
-    } catch (error) {
-      console.error('Error in fetchProfile:', error);
-      setErrorMessage('An unexpected error occurred');
-    } finally {
-      // Always exit loading state
-      setIsLikeLoading(false);
-    }
-  };
-
-  const checkIfLiked = async () => {
-    // If already checking, don't start another check
-    if (isCheckingLikeRef.current) {
+  // Handle like for registered users
+  const handleLikeUser = async () => {
+    if (!contextUser?.id || !profile?.id) {
+      Alert.alert('Error', 'You must be logged in to like users.');
       return;
     }
 
-    // Set flag to prevent duplicate runs
-    isCheckingLikeRef.current = true;
-
     try {
-      // Get authenticated user ID from context or storage
-      let currentUserID = contextUser?.id;
+      const result = await toggleLike.mutateAsync({
+        likerId: contextUser.id,
+        likedId: profile.id
+      });
 
-      if (!currentUserID) {
-        // Try getting user ID from AsyncStorage
-        const storedProfileId = await AsyncStorage.getItem('profile_id');
-
-        if (!storedProfileId) {
-          console.log('Not authenticated, skipping like check');
-          isCheckingLikeRef.current = false;
-          return;
-        }
-
-        currentUserID = storedProfileId;
-      }
-
-      if (!userId) {
-        console.log('No target user ID, skipping like check');
-        isCheckingLikeRef.current = false;
-        return;
-      }
-
-      // Check if we're dealing with a valid UUID before querying
-      // This helps prevent the "invalid input syntax for type uuid" error
-      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
-
-      if (!isValidUuid) {
-        console.log('Invalid UUID format for userId:', userId);
-        isCheckingLikeRef.current = false;
-        return;
-      }
-
-      // Check if current user has liked the profile user
-      const { data: likeData, error: likeError } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('liker_id', currentUserID)
-        .eq('liked_id', userId)
-        .single();
-
-      if (likeError && likeError.code !== 'PGRST116') {
-        console.error('Error checking if liked:', likeError);
-        isCheckingLikeRef.current = false;
-        return;
-      }
-
-      setIsLiked(!!likeData);
-    } catch (error) {
-      console.error('Error in checkIfLiked:', error);
-    } finally {
-      // Always reset the flag when done
-      isCheckingLikeRef.current = false;
-    }
-  };
-
-  const handleLike = async () => {
-    try {
-      // Set loading state
-      setIsLikeLoading(true);
-
-      // Check if we have a valid user context or profile
-      if (!contextUser?.id && !currentUserProfile?.id) {
-        Alert.alert('Error', 'You must be logged in to like users.');
-        return;
-      }
-
-      // Use current user profile ID or context user ID
-      const currentUserId = currentUserProfile?.id || contextUser?.id;
-
-      // Make sure the target user ID is valid
-      if (!userId) {
-        console.error('Cannot like: Missing target user ID');
-        return;
-      }
-
-      if (isLiked) {
-        // Unlike the user
-        const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('liker_id', currentUserId)
-          .eq('liked_id', userId);
-
-        if (error) throw error;
-
-        setIsLiked(false);
-        Alert.alert('Unliked', `You have unliked this user.`);
+      if (result.isMatch) {
+        Alert.alert('Match!', `You and ${profile.name} have liked each other!`);
+      } else if (result.liked) {
+        Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');
       } else {
-        // Like the user
-        const { error } = await supabase
-          .from('likes')
-          .insert({
-            liker_id: currentUserId,
-            liked_id: userId,
-          });
-
-        if (error) throw error;
-
-        setIsLiked(true);
-
-        // Check if it's a mutual like
-        const { data: mutualLike, error: mutualCheckError } = await supabase
-          .from('likes')
-          .select('id')
-          .eq('liker_id', userId)
-          .eq('liked_id', currentUserId)
-          .single();
-
-        if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
-
-        if (mutualLike) {
-          // Create a match
-          const { error: matchError } = await supabase
-            .from('matches')
-            .insert([{
-              user1_id: currentUserId,
-              user2_id: userId
-            }]);
-
-          if (matchError) throw matchError;
-
-          // Create match notifications
-          await supabase
-            .from('notifications')
-            .insert([
-              {
-                user_id: currentUserId,
-                type: 'match',
-                data: { matched_user_id: userId }
-              },
-              {
-                user_id: userId,
-                type: 'match',
-                data: { matched_user_id: currentUserId }
-              }
-            ]);
-
-          Alert.alert('Match!', `You and ${user?.name || 'this user'} have liked each other!`);
-        } else {
-          // Create like notification
-          await supabase
-            .from('notifications')
-            .insert([{
-              user_id: userId,
-              type: 'like',
-              data: { liker_id: currentUserId }
-            }]);
-
-          Alert.alert('Success', 'Like sent! They will be notified.');
-        }
+        // Like removed
       }
     } catch (error) {
       console.error('Error toggling like:', error);
-      Alert.alert('Error', 'Failed to update like status. Please try again.');
-    } finally {
-      // Update loading state
-      setIsLikeLoading(false);
-    }
-  };
-
-  const handleLikeUser = async () => {
-    try {
-      // Set loading state
-      setIsLikeLoading(true);
-
-      if (!user || !contextUser) return;
-
-      // Check if already liked
-      const { data: existingLike, error: checkError } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('liker_id', contextUser.clerk_id)
-        .eq('liked_id', user.clerk_id)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') throw checkError;
-
-      if (existingLike) {
-        Alert.alert('Already Liked', 'You have already liked this user.');
-        return;
-      }
-
-      // Add the like
-      const { error: likeError } = await supabase
-        .from('likes')
-        .insert([{
-          liker_id: contextUser.clerk_id,
-          liked_id: user.clerk_id
-        }]);
-
-      if (likeError) throw likeError;
-
-      // Check if it's a mutual like
-      const { data: mutualLike, error: mutualCheckError } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('liker_id', user.clerk_id)
-        .eq('liked_id', contextUser.clerk_id)
-        .single();
-
-      if (mutualCheckError && mutualCheckError.code !== 'PGRST116') throw mutualCheckError;
-
-      if (mutualLike) {
-        // Create a match
-        const { error: matchError } = await supabase
-          .from('matches')
-          .insert([{
-            user1_id: contextUser.id,
-            user2_id: user.id
-          }]);
-
-        if (matchError) throw matchError;
-
-        // Create match notification
-        await supabase
-          .from('notifications')
-          .insert([
-            {
-              user_id: contextUser.id,
-              type: 'match',
-              data: { matched_user_id: user.id }
-            },
-            {
-              user_id: user.id,
-              type: 'match',
-              data: { matched_user_id: contextUser.id }
-            }
-          ]);
-
-        Alert.alert('Match!', `You and ${user.name} have liked each other!`);
-      } else {
-        // Create like notification
-        await supabase
-          .from('notifications')
-          .insert([{
-            user_id: user.id,
-            type: 'like',
-            data: { liker_id: contextUser.clerk_id }
-          }]);
-
-        Alert.alert('Success', 'Like sent! They will be notified that someone liked them.');
-      }
-    } catch (err) {
-      console.error('Error liking user:', err);
       Alert.alert('Error', 'Failed to like user. Please try again.');
-    } finally {
-      // Update loading state
-      setIsLikeLoading(false);
     }
   };
 
+  // Handle like for unregistered users
   const handleLikeUnregistered = async () => {
+    if (!contextUser?.id || !placeholderContact?.phone_number) {
+      Alert.alert('Error', 'Cannot like this user (missing contact information)');
+      return;
+    }
+
     try {
-      // Set loading state
-      setIsLikeLoading(true);
-
-      if (!user || !user.phone) {
-        console.error('Cannot like user: Missing user or phone number');
-        Alert.alert('Error', 'Cannot like this user (missing contact information)');
-        return;
-      }
-
-      // Ensure we have a valid user ID from auth context or AsyncStorage
-      let currentUserId = contextUser?.id;
-      if (!currentUserId) {
-        try {
-          const storedProfileId = await AsyncStorage.getItem('profile_id');
-          if (storedProfileId) {
-            currentUserId = storedProfileId;
-          } else {
-            console.error('Cannot like user: Not authenticated');
-            Alert.alert('Error', 'You need to be logged in to like users');
-            return;
-          }
-        } catch (error) {
-          console.error('Error retrieving profile ID:', error);
-          Alert.alert('Error', 'Failed to verify your account');
-          return;
-        }
-      }
-
-      // Validate phone number format
-      if (!/^\+\d+$/.test(user.phone)) {
-        console.error('Invalid phone number format:', user.phone);
-        Alert.alert('Error', 'Invalid phone number format for this contact');
-        return;
-      }
-
-      // Store the like in the database with proper fields and types
-      const likeData = {
-        user_id: currentUserId,
-        phone: user.phone,
-        created_at: new Date().toISOString()
-      };
-
-      console.log('Inserting unregistered like:', likeData);
-
-      const { error: likeError } = await supabase
-        .from('unregistered_likes')
-        .insert([likeData]);
-
-      if (likeError) {
-        console.error('Database error liking unregistered user:', likeError);
-        throw likeError;
-      }
-
-      // Send SMS invite
-      const { data: response, error: smsError } = await supabase.functions.invoke('send-invite', {
-        body: {
-          phone: user.phone,
-          fromUserName: contextUser?.name || 'Someone'
-        }
+      const result = await toggleUnregisteredLike.mutateAsync({
+        userId: contextUser.id,
+        phone: placeholderContact.phone_number
       });
 
-      if (smsError) {
-        console.error('Error sending invite:', smsError);
-        Alert.alert('Partial Success', 'Like recorded but failed to send invite message.');
-        return;
-      }
-
-      if (response?.success) {
-        Alert.alert('Success', `Liked and invited ${user.name} to join doggo!`);
-
-        // Update UI state to show we've liked this user
-        setIsLiked(true);
+      if (result.liked) {
+        Alert.alert('Success', `Liked and invited ${placeholderContact.name || 'your contact'} to join doggo!`);
       } else {
-        Alert.alert('Partial Success', 'Like recorded but failed to send invite message.');
+        Alert.alert('Unliked', `You have unliked this contact.`);
       }
     } catch (err) {
-      console.error('Error liking unregistered user:', err);
-      Alert.alert('Error', 'Failed to send like. Please try again.');
-    } finally {
-      // Update loading state
-      setIsLikeLoading(false);
+      console.error('Error liking unregistered contact:', err);
+      Alert.alert('Error', 'Failed to like contact. Please try again.');
     }
   };
 
+  // Handle deletion of a post
   const handleDeletePost = async (postId: string) => {
     try {
       const { error } = await supabase
@@ -645,7 +201,10 @@ const ProfileDetailsScreen: React.FC = () => {
 
       if (error) throw error;
 
-      setPosts(posts.filter(post => post.id !== postId));
+      // Update posts list after deletion
+      refetchPosts();
+
+      // Close the photo viewer
       setPhotoViewerVisible(false);
       setSelectedPost(null);
     } catch (err) {
@@ -654,211 +213,134 @@ const ProfileDetailsScreen: React.FC = () => {
     }
   };
 
+  // Handle refresh
   const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([fetchProfile(), checkIfLiked()]);
-    setRefreshing(false);
-  };
-
-  const prefetchImages = async () => {
+    setIsRefreshing(true);
     try {
-      const newHeights: Record<string, number> = {};
-
-      for (const post of posts) {
-        const { id, url } = post;
-
-        try {
-          // Prefetch the image
-          await Image.prefetch(url);
-
-          // Get dimensions
-          const { width: imageWidth, height: imageHeight } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-            Image.getSize(
-              url,
-              (width, height) => resolve({ width, height }),
-              (error) => reject(error)
-            );
-          });
-
-          // Calculate height based on aspect ratio
-          const aspectRatio = imageWidth / imageHeight;
-          const height = GALLERY_COLUMN_WIDTH / aspectRatio;
-
-          newHeights[id] = height;
-        } catch (error) {
-          console.error(`Error prefetching image ${id}:`, error);
-          newHeights[id] = GALLERY_COLUMN_WIDTH; // Default to square
-        }
+      if (refetchProfile && refetchPosts) {
+        await Promise.all([refetchProfile(), refetchPosts()]);
       }
-
-      setImageHeights(newHeights);
     } catch (error) {
-      console.error('Error prefetching images:', error);
+      console.error('Error refreshing profile data:', error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    if (posts.length === 0 || Object.keys(imageHeights).length === 0) return;
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [0, -TOTAL_HEADER_HEIGHT],
+    extrapolate: 'clamp'
+  });
 
-    let leftHeight = 0;
-    let rightHeight = 0;
-    const left: Post[] = [];
-    const right: Post[] = [];
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, TOTAL_HEADER_HEIGHT],
+    outputRange: [1, 0],
+    extrapolate: 'clamp'
+  });
 
-    // Sort posts by creation date (newest first)
-    const sortedPosts = [...posts].sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+  if (isProfileLoading && !isRefreshing) {
+    return <ProfileSkeleton />;
+  }
 
-    // Distribute posts to balance column heights
-    sortedPosts.forEach(post => {
-      const postHeight = imageHeights[post.id] || GALLERY_COLUMN_WIDTH;
-
-      // Add to shorter column
-      if (leftHeight <= rightHeight) {
-        left.push(post);
-        leftHeight += postHeight + PHOTO_GAP;
-      } else {
-        right.push(post);
-        rightHeight += postHeight + PHOTO_GAP;
-      }
-    });
-
-    setLeftColumn(left);
-    setRightColumn(right);
-  }, [posts, imageHeights]);
-
-  const renderColumn = (posts: Post[], isRightColumn: boolean) => {
+  if (profileError && !placeholderContact) {
     return (
-      <View style={[
-        styles.column,
-        {
-          marginLeft: isRightColumn ? PHOTO_GAP : 0,
-        }
-      ]}>
-        {posts.map((post) => {
-          const height = imageHeights[post.id] || GALLERY_COLUMN_WIDTH;
-          return (
-            <TouchableOpacity
-              key={post.id}
-              style={[
-                styles.postContainer,
-                {
-                  width: GALLERY_COLUMN_WIDTH,
-                  height,
-                  marginBottom: PHOTO_GAP,
-                }
-              ]}
-              onPress={() => {
-                setSelectedPost(post);
-                setPhotoViewerVisible(true);
-              }}
-            >
-              <Image
-                source={{ uri: post.url }}
-                style={styles.postImage}
-                resizeMode="cover"
-              />
-            </TouchableOpacity>
-          );
-        })}
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Error loading profile. Please try again.</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
-  };
+  }
 
-  const renderContent = () => {
-    if (errorMessage) {
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={handleRefresh}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
+  // Safely access profile data
+  const profileData = profile as Profile;
 
-    return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false }
+        )}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <View style={styles.profileContainer}>
+            <Image
+              source={
+                profileData.profile_picture_url
+                  ? { uri: profileData.profile_picture_url }
+                  : require('@assets/images/Default_pfp.svg.png')
+              }
+              style={styles.profileImage}
             />
-          }
-          contentContainerStyle={styles.contentContainer}
-        >
-          <View style={styles.profileSection}>
-            <View style={styles.profileHeader}>
-              <View style={styles.profileImageContainer}>
-                <Image
-                  source={
-                    user?.profile_picture_url
-                      ? { uri: user.profile_picture_url }
-                      : require('@assets/images/Default_pfp.svg.png')
-                  }
-                  style={styles.profileImage}
-                />
-              </View>
-
-              <View style={styles.userInfo}>
-                <Text style={styles.name}>
-                  {user?.name || 'Unknown'}
-                </Text>
-                <Text style={styles.username}>
-                  {user?.is_placeholder
-                    ? 'Not on doggo yet'
-                    : '@unknown'}
-                </Text>
-                {user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
-              </View>
-            </View>
-
-            <View style={styles.actionButtons}>
-              {!isProfileOwner && (
-                <TouchableOpacity
-                  style={[
-                    styles.actionButton,
-                    isLiked && styles.likedButton
-                  ]}
-                  onPress={user?.is_placeholder ? handleLikeUnregistered : handleLikeUser}
-                  disabled={isLikeLoading}
-                >
-                  <Text style={styles.actionButtonText}>
-                    {isLikeLoading
-                      ? 'Loading...'
-                      : isLiked
-                        ? 'Liked'
-                        : user?.is_placeholder
-                          ? 'Invite'
-                          : 'Like'}
-                  </Text>
-                </TouchableOpacity>
-              )}
+            <View style={styles.userInfo}>
+              <Text style={styles.name}>
+                {profileData.name || placeholderContact?.name || 'Unknown'}
+              </Text>
+              <Text style={styles.username}>
+                {placeholderContact
+                  ? 'Not on doggo yet'
+                  : `@${profileData.username || 'unknown'}`}
+              </Text>
+              {profileData.bio && <Text style={styles.bio}>{profileData.bio}</Text>}
             </View>
           </View>
 
-          {posts.length > 0 ? (
-            <View style={styles.galleryContainer}>
-              {renderColumn(leftColumn, false)}
-              {renderColumn(rightColumn, true)}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                {user?.is_placeholder
-                  ? 'This user hasn\'t joined doggo yet'
-                  : 'No posts yet'}
-              </Text>
-            </View>
-          )}
-        </ScrollView>
+          <View style={styles.actionButtons}>
+            {!isProfileOwner && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  isLiked && styles.likedButton
+                ]}
+                onPress={placeholderContact ? handleLikeUnregistered : handleLikeUser}
+                disabled={isLikeLoading}
+              >
+                <Text style={styles.actionButtonText}>
+                  {isLikeLoading
+                    ? 'Loading...'
+                    : isLiked
+                      ? 'Liked'
+                      : placeholderContact
+                        ? 'Invite'
+                        : 'Like'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
 
+        {/* Posts Grid */}
+        <PhotoGrid
+          photos={posts || []}
+          onPhotoPress={(photo) => {
+            // Ensure we safely convert the PhotoGrid's Photo type to our Photo type
+            if (!photo || !photo.id || !photo.url) {
+              console.warn('Invalid photo object:', photo);
+              return;
+            }
+            setSelectedPost(photo as unknown as Photo);
+            setPhotoViewerVisible(true);
+          }}
+          columns={2}
+          loading={isPostsLoading}
+          emptyMessage={`${profileData?.name || 'This user'} hasn't posted any photos yet.`}
+        />
+      </ScrollView>
+      {/* Photo Viewer Modal */}
+      {selectedPost && (
         <PhotoViewer
           visible={photoViewerVisible}
           photo={selectedPost}
@@ -869,165 +351,122 @@ const ProfileDetailsScreen: React.FC = () => {
           onDelete={handleDeletePost}
           isOwner={isProfileOwner}
         />
-      </SafeAreaView>
-    );
-  };
-
-  if (isLikeLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  return renderContent();
+      )}
+    </SafeAreaView>
+  );
 };
 
 export default ProfileDetailsScreen;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  contentContainer: {
-    paddingBottom: spacing.xl * 2,
+  scrollView: {
+    flex: 1,
   },
-  emptyContainer: {
+  errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 100,
+    padding: 20,
   },
-  emptyText: {
-    fontSize: typography.body.fontSize,
-    color: colors.textSecondary,
+  errorText: {
+    fontSize: 16,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: 20,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  headerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: TOTAL_HEADER_HEIGHT,
     backgroundColor: colors.background,
-  },
-  loadingText: {
-    color: colors.textPrimary,
-    fontSize: typography.title.fontSize,
-  },
-  profileSection: {
-    paddingHorizontal: HEADER_PADDING,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
-    backgroundColor: colors.background,
-  },
-  profileHeader: {
+    paddingTop: STATUS_BAR_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+    zIndex: 10,
   },
-  profileImageContainer: {
-    marginRight: spacing.md,
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: typography.title.fontSize,
+    fontWeight: typography.title.fontWeight,
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 40, // To balance with the back button
+  },
+  profileHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  profileContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   profileImage: {
     width: PROFILE_IMAGE_SIZE,
     height: PROFILE_IMAGE_SIZE,
     borderRadius: PROFILE_IMAGE_SIZE / 2,
-    marginBottom: spacing.sm,
-    resizeMode: 'cover',
+    marginRight: 16,
   },
   userInfo: {
     flex: 1,
   },
   name: {
     fontSize: typography.title.fontSize,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    fontWeight: typography.title.fontWeight,
+    marginBottom: 4,
   },
   username: {
     fontSize: typography.body.fontSize,
     color: colors.textSecondary,
-    marginBottom: spacing.xs,
+    marginBottom: 8,
   },
   bio: {
     fontSize: typography.body.fontSize,
     color: colors.textPrimary,
-    marginTop: spacing.xs,
   },
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
-    marginTop: spacing.md,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: layout.borderRadius.md,
-    marginRight: spacing.sm,
-  },
-  actionButtonText: {
-    color: colors.background,
-    fontSize: typography.body.fontSize,
-    fontWeight: '500',
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   likedButton: {
     backgroundColor: colors.success,
   },
-  galleryContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: HEADER_PADDING,
-    marginTop: spacing.xl,
-  },
-  column: {
-    flex: 1,
-  },
-  galleryItem: {
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-  },
-  galleryImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.surface,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  errorText: {
-    fontSize: typography.body.fontSize,
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  retryButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: layout.borderRadius.md,
-  },
-  retryButtonText: {
-    color: colors.background,
-    fontSize: typography.body.fontSize,
-    fontWeight: '500',
-  },
-  row: {
-    justifyContent: 'space-between',
-    paddingHorizontal: HEADER_PADDING,
-    marginBottom: PHOTO_GAP,
-  },
-  postContainer: {
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-  },
-  postImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.surface,
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });
 

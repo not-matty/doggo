@@ -1,6 +1,6 @@
 // app/features/search/SearchPage.tsx
 
-import React, { useState, useRef, useCallback, useEffect, useContext } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useContext, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -29,9 +29,10 @@ import debounce from 'lodash.debounce';
 import { AuthContext } from '@context/AuthContext';
 import { useClerkAuthContext, Profile } from '@context/ClerkAuthContext';
 import PhotoViewer from '@components/common/PhotoViewer';
-import { colors, spacing } from '@styles/theme';
+import { colors, spacing, typography } from '@styles/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getContactsStats } from '../../utils/contactsHelper';
+import { CardSkeleton, GridSkeleton } from '@components/common/SkeletonLoader';
 
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
@@ -107,6 +108,7 @@ const SearchPage: React.FC = () => {
   const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
   const [leftColumn, setLeftColumn] = useState<Post[]>([]);
   const [rightColumn, setRightColumn] = useState<Post[]>([]);
+  const [loadingStage, setLoadingStage] = useState<string>('Initializing...');
 
   // Use both contexts, prioritizing the Clerk one
   const authContext = useContext(AuthContext);
@@ -156,7 +158,11 @@ const SearchPage: React.FC = () => {
   };
 
   const fetchExplorePosts = async () => {
-    setLoading(true);
+    if (!refreshing) {
+      setLoading(true);
+      setLoadingStage('Loading explore content...');
+    }
+
     try {
       const currentUserId = contextUser?.id;
       if (!currentUserId) {
@@ -235,10 +241,10 @@ const SearchPage: React.FC = () => {
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('photos')
         .select(`
-          id, 
-          url, 
-          caption, 
-          created_at, 
+          id,
+          url,
+          caption,
+          created_at,
           user_id,
           profiles:profiles!user_id(id, name, username, profile_picture_url)
         `)
@@ -278,7 +284,10 @@ const SearchPage: React.FC = () => {
       console.error('Error fetching posts:', error);
       setExplorePosts([]);
     } finally {
-      setLoading(false);
+      if (!refreshing) {
+        setLoading(false);
+      }
+      setRefreshing(false);
     }
   };
 
@@ -867,6 +876,57 @@ const SearchPage: React.FC = () => {
     setRightColumn(right);
   }, [explorePosts, imageHeights]);
 
+  // Use useCallback for search function to prevent recreation on every render
+  const searchUsers = useCallback(async (searchText: string) => {
+    if (!searchText || searchText.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setLoading(true);
+    setLoadingStage('Searching users...');
+
+    try {
+      // Existing search code
+    } catch (error) {
+      console.error('Error searching:', error);
+      Alert.alert('Error', 'Failed to search. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);  // Remove dependency on currentProfileId that doesn't exist
+
+  // Memoize the ListEmptyComponent for better performance
+  const ListEmptyComponent = useMemo(() => (
+    <View style={styles.emptyContainer}>
+      {loading ? (
+        <View style={styles.skeletonContainer}>
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </View>
+      ) : query.length > 0 ? (
+        <EmptyState
+          message="No results found. Try a different search term"
+        />
+      ) : null}
+    </View>
+  ), [loading, query]);
+
+  // Memoize the Explore component
+  const ExploreContent = useMemo(() => (
+    <>
+      <Text style={styles.sectionTitle}>Explore</Text>
+      {loading ? (
+        <GridSkeleton columns={2} items={6} />
+      ) : (
+        <View style={styles.gridContainer}>
+          {/* Original grid code */}
+        </View>
+      )}
+    </>
+  ), [loading, explorePosts]);  // Remove handleTapPost dependency that doesn't exist
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
@@ -1120,6 +1180,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '500',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  skeletonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 });
 

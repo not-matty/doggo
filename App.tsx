@@ -10,6 +10,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Contacts from 'expo-contacts';
 import { Alert } from 'react-native';
 import { navigationRef } from '@navigation/RootNavigation';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@services/queryClient';
 
 const App: React.FC = () => {
   useEffect(() => {
@@ -57,15 +59,17 @@ const App: React.FC = () => {
   };
 
   return (
-    <ClerkProvider>
-      <NavigationContainer ref={navigationRef}>
-        <ClerkAuthContextProvider>
-          <AppProvider>
-            <RootNavigator />
-          </AppProvider>
-        </ClerkAuthContextProvider>
-      </NavigationContainer>
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <ClerkProvider>
+        <NavigationContainer ref={navigationRef}>
+          <ClerkAuthContextProvider>
+            <AppProvider>
+              <RootNavigator />
+            </AppProvider>
+          </ClerkAuthContextProvider>
+        </NavigationContainer>
+      </ClerkProvider>
+    </QueryClientProvider>
   );
 };
 

@@ -1,6 +1,6 @@
 // app/features/home/screens/AddPhotoScreen.tsx
 
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,6 +16,8 @@ import {
   Linking,
   TouchableWithoutFeedback,
   Keyboard,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@services/supabase';
@@ -26,12 +28,15 @@ import { useNavigation } from '@react-navigation/native';
 import { optimizeImage } from '../../../utils/imageOptimizer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera } from 'expo-camera';
+import * as FileSystem from 'expo-file-system';
 
 const AddPhotoScreen: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [loadingStage, setLoadingStage] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Use both contexts, prioritizing the Clerk one
   const authContext = useContext(AuthContext);
@@ -85,12 +90,10 @@ const AddPhotoScreen: React.FC = () => {
       // Check for media library permissions
       const { status: mediaStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       setMediaLibraryPermission(mediaStatus === 'granted');
-
-      // Don't request contacts permission immediately, this will happen at an appropriate time
     })();
   }, []);
 
-  const openImagePicker = async () => {
+  const openImagePicker = useCallback(async () => {
     try {
       const permissionStatus = await ImagePicker.getMediaLibraryPermissionsAsync();
 
@@ -99,76 +102,164 @@ const AddPhotoScreen: React.FC = () => {
           'Permission Required',
           'This app needs access to your photo library to share photos.',
           [
-            { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() }
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Settings', onPress: () => Linking.openSettings() }
           ]
         );
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images',
-        allowsEditing: false,
-        quality: 1,
-        exif: true,
+        mediaTypes: ['images'] as any,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
       });
 
-      if (!result.canceled) {
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         setSelectedImage(result.assets[0].uri);
-      } else {
-        navigation.goBack();
       }
     } catch (error) {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to open photo library');
-      navigation.goBack();
+    }
+  }, []);
+
+  // Simple function to generate a pseudo-random ID that doesn't rely on crypto
+  const generateUniqueId = () => {
+    // Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+    // where y is 8, 9, a, or b
+    const template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+    return template.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  // Utility function to prepare file for upload
+  const prepareFileForUpload = async (uri: string): Promise<Blob> => {
+    try {
+      // Ensure we have a valid URI
+      if (!uri) throw new Error('Invalid file URI');
+
+      console.log(`Original URI: ${uri}`);
+
+      // Check if file exists
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
+        throw new Error(`File does not exist at path: ${uri}`);
+      }
+
+      console.log(`File exists, size: ${fileInfo.size} bytes`);
+
+      // In React Native, we need a different approach for blob creation
+      // First, read the file as base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+
+      if (!base64) {
+        throw new Error('Failed to read file as base64');
+      }
+
+      console.log(`Successfully read file as base64, length: ${base64.length}`);
+
+      // For Supabase, use a simpler approach to create the blob
+      // by decoding base64 to binary
+      const binary = atob(base64);
+      const array = [];
+      for (let i = 0; i < binary.length; i++) {
+        array.push(binary.charCodeAt(i));
+      }
+
+      // Create blob from array buffer
+      const blob = new Blob([new Uint8Array(array)], { type: 'image/jpeg' });
+
+      if (!blob || blob.size === 0) {
+        throw new Error('Generated blob is empty');
+      }
+
+      console.log(`Successfully created blob with size ${blob.size} bytes`);
+      return blob;
+    } catch (error: any) {
+      console.error('Error preparing file:', error);
+      throw new Error(`Failed to prepare file: ${error.message || 'Unknown error'}`);
     }
   };
 
-  const handleAddPhoto = async () => {
-    // Call handleUpload directly instead of showing a modal
-    await handleUpload();
-  };
+  const uploadPhoto = useCallback(async () => {
+    if (!selectedImage) {
+      Alert.alert('Error', 'Please select an image first');
+      return;
+    }
 
-  const handleUpload = async () => {
-    const uploadUserId = userId || contextUser?.id;
-
-    if (!selectedImage || !uploadUserId) {
+    if (!userId) {
       Alert.alert('Error', 'Unable to upload. Please try again after signing in.');
-      navigation.goBack();
       return;
     }
 
     setUploading(true);
+    setLoadingStage('Optimizing image...');
+    setUploadProgress(10);
+
     try {
-      // Optimize the image
+      // Use our custom function instead of uuidv4()
+      let photoId;
+      try {
+        photoId = generateUniqueId();
+      } catch (idError) {
+        console.error('Error generating photo ID:', idError);
+        // Fallback to simple timestamp-based ID if UUID generation fails
+        photoId = `photo-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      }
+
+      const fileExt = selectedImage.split('.').pop();
+      const fileName = `${photoId}.${fileExt}`;
+      const filePath = `${userId}/${fileName}`;
+
+      // Optimize the image before uploading
+      setLoadingStage('Processing image...');
+      setUploadProgress(30);
       const optimizedImage = await optimizeImage(selectedImage, {
-        maxWidth: 2048,
-        maxHeight: 2048,
-        quality: 0.9
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 0.8
       });
 
-      const fileExt = optimizedImage.uri.split('.').pop();
-      const fileName = `${uploadUserId}/${Date.now()}.${fileExt}`;
+      // Prepare the file for upload using our utility function
+      setLoadingStage('Preparing file for upload...');
+      setUploadProgress(40);
 
-      console.log('Preparing to upload file:', fileName);
+      // Try a different approach - read file directly from path
+      const fileContent = await FileSystem.readAsStringAsync(optimizedImage.uri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
 
-      // Create FormData for the image
-      const formData = new FormData();
-      formData.append('file', {
-        uri: optimizedImage.uri,
-        name: fileName,
-        type: `image/${fileExt}`,
-      } as any);
+      if (!fileContent) {
+        throw new Error('Failed to read image file');
+      }
 
-      console.log('Uploading to storage bucket: posts');
+      console.log(`Read file of length: ${fileContent.length}`);
+      setUploadProgress(45);
 
-      // Upload to Supabase Storage
+      // Convert base64 to Uint8Array for upload
+      const binary = atob(fileContent);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
+      }
+
+      // Upload to Supabase
+      setLoadingStage('Uploading to storage...');
+      setUploadProgress(50);
+
       const { error: uploadError } = await supabase.storage
         .from('posts')
-        .upload(fileName, formData, {
+        .upload(filePath, array, {
+          contentType: 'image/jpeg',
           cacheControl: '3600',
-          upsert: false
+          upsert: true
         });
 
       if (uploadError) {
@@ -179,41 +270,37 @@ const AddPhotoScreen: React.FC = () => {
         throw uploadError;
       }
 
-      console.log('File uploaded successfully, getting public URL');
-
-      // Get public URL
+      // Get the public URL
+      setLoadingStage('Processing upload...');
+      setUploadProgress(70);
       const { data: urlData } = supabase.storage
         .from('posts')
-        .getPublicUrl(fileName);
+        .getPublicUrl(filePath);
 
       if (!urlData?.publicUrl) {
         console.error('Failed to get public URL');
         throw new Error('Failed to get public URL for uploaded file');
       }
 
-      console.log('Got public URL:', urlData.publicUrl);
-      console.log('Creating database record...');
-
-      // Create photo record
+      // Save the photo information to the database
+      setLoadingStage('Saving photo data...');
+      setUploadProgress(90);
       const { error: insertError } = await supabase
         .from('photos')
-        .insert([{
-          user_id: uploadUserId,
+        .insert({
+          id: photoId,
           url: urlData.publicUrl,
-          caption: caption.trim() || null,
-          created_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+          user_id: userId,
+          caption: caption.trim() || null
+        });
 
       if (insertError) {
         console.error('Database insert error:', insertError);
-
-        // If database insert fails, try to clean up the uploaded file
+        // Try to clean up the uploaded file
         try {
           await supabase.storage
             .from('posts')
-            .remove([fileName]);
+            .remove([filePath]);
         } catch (cleanupError) {
           console.error('Failed to clean up uploaded file:', cleanupError);
         }
@@ -221,65 +308,109 @@ const AddPhotoScreen: React.FC = () => {
         throw new Error('Failed to save photo information');
       }
 
-      console.log('Photo upload complete');
+      // Success! Go back to home screen
+      setLoadingStage('Upload complete!');
+      setUploadProgress(100);
+      Alert.alert('Success', 'Photo uploaded successfully!');
       navigation.goBack();
     } catch (error: any) {
       console.error('Upload error:', error);
       Alert.alert('Error', error.message || 'Failed to upload photo');
     } finally {
       setUploading(false);
+      setUploadProgress(0);
+      setLoadingStage('');
     }
-  };
+  }, [selectedImage, caption, userId, uploading, uploadProgress, loadingStage, openImagePicker]);
 
-  if (!selectedImage) {
+  // Memoize the content to prevent unnecessary re-renders
+  const renderContent = useMemo(() => {
+    if (uploading) {
+      return (
+        <View style={styles.uploadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.uploadingText}>{loadingStage}</Text>
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBar, { width: `${uploadProgress}%` }]} />
+          </View>
+          <Text style={styles.progressText}>{uploadProgress}%</Text>
+        </View>
+      );
+    }
+
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.inner}>
+            {selectedImage ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  style={styles.changePhotoButton}
+                  onPress={openImagePicker}
+                >
+                  <Text style={styles.changePhotoText}>Change Photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.placeholderContainer}
+                onPress={openImagePicker}
+              >
+                <Text style={styles.placeholderText}>Tap to select a photo</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.captionContainer}>
+              <TextInput
+                style={styles.captionInput}
+                placeholder="Add a caption..."
+                placeholderTextColor={colors.textSecondary}
+                value={caption}
+                onChangeText={setCaption}
+                multiline
+                maxLength={150}
+              />
+              <Text style={styles.characterCount}>
+                {caption.length}/150
+              </Text>
+            </View>
+
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.uploadButton,
+                  (!selectedImage || !userId) && styles.disabledButton
+                ]}
+                onPress={uploadPhoto}
+                disabled={!selectedImage || !userId}
+              >
+                <Text style={styles.uploadButtonText}>Upload</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     );
-  }
+  }, [selectedImage, caption, userId, uploading, uploadProgress, loadingStage, openImagePicker]);
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.container}
-        >
-          <Image
-            source={{ uri: selectedImage }}
-            style={styles.image}
-            resizeMode="contain"
-          />
-
-          <View style={styles.captionContainer}>
-            <TextInput
-              style={styles.captionInput}
-              placeholder="Write a caption..."
-              placeholderTextColor={colors.textSecondary}
-              value={caption}
-              onChangeText={setCaption}
-              multiline
-              maxLength={2200}
-            />
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, uploading && styles.buttonDisabled]}
-              onPress={handleAddPhoto}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator color={colors.background} />
-              ) : (
-                <Text style={styles.buttonText}>Share</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </TouchableWithoutFeedback>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>New Post</Text>
+      </View>
+      {renderContent}
+    </SafeAreaView>
   );
 };
 
@@ -324,6 +455,119 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: typography.body.fontSize,
     fontWeight: typography.title.fontWeight,
+  },
+  uploadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  uploadingText: {
+    marginTop: 20,
+    fontSize: 16,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  progressBarContainer: {
+    width: '80%',
+    height: 10,
+    backgroundColor: colors.background,
+    borderRadius: 5,
+    marginTop: 15,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: colors.primary,
+  },
+  progressText: {
+    marginTop: 5,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  imagePreviewContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+  },
+  changePhotoButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 5,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+  },
+  changePhotoText: {
+    color: colors.background,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  placeholderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+  },
+  characterCount: {
+    alignSelf: 'flex-end',
+    marginTop: 5,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.md,
+  },
+  cancelButton: {
+    backgroundColor: colors.primary,
+    padding: spacing.md,
+    borderRadius: layout.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    color: colors.background,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.title.fontWeight,
+  },
+  uploadButton: {
+    backgroundColor: colors.primary,
+    padding: spacing.md,
+    borderRadius: layout.borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  uploadButtonText: {
+    color: colors.background,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.title.fontWeight,
+  },
+  header: {
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  inner: {
+    flex: 1,
   },
 });
 

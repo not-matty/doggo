@@ -1,6 +1,6 @@
 // app/features/profile/screens/ProfilePage.tsx
 
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,9 @@ import { optimizeImage } from '../../../utils/imageOptimizer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera, CameraType } from 'expo-camera';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { ProfileSkeleton, GridSkeleton } from '@components/common/SkeletonLoader';
+import { useProfile } from '../../../hooks/useProfile';
+import { useUserPosts } from '../../../hooks/usePosts';
 
 interface Photo {
   id: string;
@@ -101,6 +104,7 @@ const ProfilePage: React.FC = () => {
   const [leftColumn, setLeftColumn] = useState<Photo[]>([]);
   const [rightColumn, setRightColumn] = useState<Photo[]>([]);
   const scrollY = new Animated.Value(0);
+  const [loadingStage, setLoadingStage] = useState<string>('Initializing...');
 
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, TOTAL_HEADER_HEIGHT],
@@ -113,6 +117,31 @@ const ProfilePage: React.FC = () => {
     outputRange: [1.2, 1, 0.8],
     extrapolate: 'clamp'
   });
+
+  // Only fetch the user's own profile
+  const userId = contextUser?.id;
+
+  // Use React Query for profile data
+  const {
+    data: profileData,
+    isLoading: isProfileLoading,
+    error: profileError,
+    refetch: refetchProfile
+  } = useProfile(userId);
+
+  // Use React Query for user posts with pagination
+  const {
+    data: postsData,
+    isLoading: isPostsLoading,
+    refetch: refetchPosts
+  } = useUserPosts(userId);
+
+  // Extract posts from the infinite query result
+  const userPosts = useMemo(() => {
+    return postsData?.pages
+      ? postsData.pages.flatMap(page => (page as any).posts || [])
+      : [];
+  }, [postsData]);
 
   const prefetchImages = async (imagesToPrefetch: Photo[]) => {
     try {
@@ -386,10 +415,18 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    fetchUserAndPosts();
-  };
+    try {
+      if (refetchProfile && refetchPosts) {
+        await Promise.all([refetchProfile(), refetchPosts()]);
+      }
+    } catch (error) {
+      console.error('Error refreshing profile data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchProfile, refetchPosts]);
 
   const handleProfileImagePress = async () => {
     if (!profile || profile.id !== contextUser?.id) return;
@@ -683,15 +720,28 @@ const ProfilePage: React.FC = () => {
     );
   };
 
-  if (loading) {
+  // Show skeleton loader during loading
+  if (isProfileLoading && !refreshing) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ProfileSkeleton />
+        <GridSkeleton columns={3} items={9} />
       </View>
     );
   }
 
-  if (!profile) {
+  if (profileError) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>Error loading profile. Please try again.</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!profileData) {
     return (
       <View style={styles.container}>
         <Text style={styles.text}>User not found</Text>
@@ -702,7 +752,7 @@ const ProfilePage: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.fixedHeader}>
-        <Text style={styles.headerUsername}>@{profile?.username}</Text>
+        <Text style={styles.headerUsername}>@{profileData?.username}</Text>
       </View>
 
       <AnimatedFlatList
@@ -734,11 +784,11 @@ const ProfilePage: React.FC = () => {
                   >
                     <Image
                       source={{
-                        uri: profile?.profile_picture_url || 'https://via.placeholder.com/80'
+                        uri: profileData?.profile_picture_url || 'https://via.placeholder.com/80'
                       }}
                       style={styles.profileImage}
                     />
-                    {profile?.id === contextUser?.id && !uploadingImage && (
+                    {profileData?.id === contextUser?.id && !uploadingImage && (
                       <View style={styles.profileImageOverlay}>
                         <View style={styles.cameraIconContainer}>
                           <Feather name="camera" size={20} color={colors.background} />
@@ -753,9 +803,9 @@ const ProfilePage: React.FC = () => {
                     )}
                   </TouchableOpacity>
                   <View style={styles.userInfo}>
-                    <Text style={styles.name}>{profile?.name}</Text>
-                    {profile?.bio && (
-                      <Text style={styles.bio}>{profile.bio}</Text>
+                    <Text style={styles.name}>{profileData?.name}</Text>
+                    {profileData?.bio && (
+                      <Text style={styles.bio}>{profileData.bio}</Text>
                     )}
                   </View>
                 </View>
@@ -1047,6 +1097,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 12,
     fontWeight: '500',
+  },
+  errorText: {
+    fontSize: 16,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });
 
