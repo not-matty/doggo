@@ -17,6 +17,7 @@ import {
   Image,
   RefreshControl,
   StatusBar,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -35,7 +36,7 @@ import { getContactsStats } from '../../utils/contactsHelper';
 type SearchPageNavigationProp = StackNavigationProp<SearchStackParamList, 'SearchPage'>;
 
 const { width } = Dimensions.get('window');
-const SEARCH_BAR_HEIGHT = 70;
+const SEARCH_BAR_HEIGHT = 60;
 
 interface Post {
   id: string;
@@ -73,28 +74,61 @@ interface SearchResult {
   connection_type: string;
 }
 
+interface PhotoQueryResult {
+  id: string;
+  url: string;
+  caption: string | null;
+  created_at: string;
+  user_id: string;
+  profiles?: Array<{
+    id: string;
+    name: string;
+    username: string;
+    profile_picture_url: string | null;
+  }>;
+  user?: {
+    name: string | null;
+    username: string | null;
+    profile_picture_url: string | null;
+  };
+}
+
 const SearchPage: React.FC = () => {
   const navigation = useNavigation<SearchPageNavigationProp>();
-  // Use both contexts for now, prioritizing the Clerk one
-  const authContext = useContext(AuthContext);
-  const clerkAuthContext = useClerkAuthContext();
-
-  // Choose which auth context to use
-  const contextUser = clerkAuthContext?.user || authContext?.user;
-  const checkContactsPermission = clerkAuthContext?.checkContactsPermission || authContext?.checkContactsPermission;
-
   const [query, setQuery] = useState('');
-  const [contactNetworkUsers, setContactNetworkUsers] = useState<ContactNetworkUser[]>([]);
+  const [searchResults, setSearchResults] = useState<ContactNetworkUser[]>([]);
   const [explorePosts, setExplorePosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [contactsStats, setContactsStats] = useState<{ total: number; matched: number; hasImported?: boolean } | null>(null);
+  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
+  const [leftColumn, setLeftColumn] = useState<Post[]>([]);
+  const [rightColumn, setRightColumn] = useState<Post[]>([]);
 
-  const translateY = useRef(new Animated.Value(0)).current;
-  const lastScrollY = useRef(0);
+  // Use both contexts, prioritizing the Clerk one
+  const authContext = useContext(AuthContext);
+  const clerkAuthContext = useClerkAuthContext();
+
+  // Choose which auth context to use with safe null checking
+  const contextUser = clerkAuthContext?.user || authContext?.user;
+  const checkContactsPermission = clerkAuthContext?.checkContactsPermission || authContext?.checkContactsPermission;
+
+  // Update to use a simpler animation approach
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const translateY = scrollY.interpolate({
+    inputRange: [0, 40],
+    outputRange: [0, -SEARCH_BAR_HEIGHT],
+    extrapolate: 'clamp',
+  });
+
+  // Regular scroll handler that manually updates the animated value
+  const handleScroll = (event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    scrollY.setValue(offsetY);
+  };
 
   useEffect(() => {
     fetchExplorePosts();
@@ -108,8 +142,8 @@ const SearchPage: React.FC = () => {
         setContactsStats(stats);
 
         // If contacts not imported, prompt for permission
-        if (stats && !stats.hasImported && checkContactsPermission) {
-          const permissionGranted = await checkContactsPermission();
+        if (stats && !stats.hasImported && clerkAuthContext?.checkContactsPermission) {
+          const permissionGranted = await clerkAuthContext.checkContactsPermission();
           if (permissionGranted) {
             // Refresh after import
             fetchExplorePosts();
@@ -122,76 +156,141 @@ const SearchPage: React.FC = () => {
   };
 
   const fetchExplorePosts = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // Only fetch posts from user's direct contacts and 2nd-degree connections
-      const { data, error } = await supabase.rpc('get_contact_network_posts', {
-        limit_count: 20
-      });
-
-      if (error) {
-        console.error('Error fetching posts:', error);
-        // Fallback to simpler query if RPC fails (maybe it doesn't exist yet)
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('photos')
-          .select(`
-            id,
-            url,
-            caption,
-            created_at,
-            user_id,
-            user:profiles!user_id (
-              id,
-              name,
-              username,
-              profile_picture_url
-            )
-          `)
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        if (fallbackError) throw fallbackError;
-
-        if (fallbackData) {
-          const postsWithValidUrls = fallbackData.map(post => ({
-            id: post.id,
-            url: post.url || '',
-            caption: post.caption,
-            created_at: post.created_at,
-            user_id: post.user_id,
-            user: {
-              id: post.user?.[0]?.id || '',
-              name: post.user?.[0]?.name || '',
-              username: post.user?.[0]?.username || '',
-              profile_picture_url: post.user?.[0]?.profile_picture_url || null
-            }
-          }));
-
-          setExplorePosts(postsWithValidUrls);
-        }
-      } else {
-        setExplorePosts(data || []);
+      const currentUserId = contextUser?.id;
+      if (!currentUserId) {
+        console.log('No user ID available for fetch');
+        setLoading(false);
+        return;
       }
-    } catch (error: any) {
-      console.error('Error fetching explore posts:', error);
-      Alert.alert('Error', 'Failed to fetch posts from your network');
+
+      // Try to use the RPC function first
+      try {
+        console.log('Fetching posts from contact network');
+        const { data, error } = await supabase.rpc('get_contact_network_posts', {
+          current_user_id: currentUserId,
+          limit_count: 20
+        });
+
+        if (error) {
+          console.error('RPC error:', error);
+          throw error;
+        }
+
+        if (data && data.length > 0) {
+          console.log(`Got ${data.length} posts from contact network`);
+
+          // Get the user IDs from the posts to fetch their profile information
+          const userIds = [...new Set(data.map((post: PhotoQueryResult) => post.user_id))];
+
+          // Fetch profile information for these users in a single query
+          const { data: profilesData, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, name, username, profile_picture_url')
+            .in('id', userIds);
+
+          if (profilesError) {
+            console.error('Error fetching profiles:', profilesError);
+          }
+
+          // Create a map of user IDs to their profile information
+          const profilesMap = new Map();
+          if (profilesData) {
+            profilesData.forEach(profile => {
+              profilesMap.set(profile.id, profile);
+            });
+          }
+
+          // Transform data to match Post type
+          const posts: Post[] = data.map((post: PhotoQueryResult) => {
+            const userProfile = profilesMap.get(post.user_id);
+            return {
+              id: post.id,
+              url: post.url,
+              created_at: post.created_at,
+              caption: post.caption || undefined,
+              user_id: post.user_id,
+              user: {
+                id: post.user_id,
+                name: userProfile?.name || "Unknown",
+                username: userProfile?.username || "Unknown",
+                profile_picture_url: userProfile?.profile_picture_url || null,
+              }
+            };
+          });
+
+          setExplorePosts(posts);
+          // Prefetch images for height calculation
+          await prefetchImages(posts);
+          setLoading(false);
+          return;
+        }
+      } catch (rpcError) {
+        console.error('Failed to use RPC, falling back to direct query:', rpcError);
+      }
+
+      // Fallback: direct query to photos with explicit join to profiles
+      console.log('Falling back to direct photos query');
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('photos')
+        .select(`
+          id, 
+          url, 
+          caption, 
+          created_at, 
+          user_id,
+          profiles:profiles!user_id(id, name, username, profile_picture_url)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (fallbackError) {
+        console.error('Fallback query error:', fallbackError);
+        throw fallbackError;
+      }
+
+      console.log(`Got ${fallbackData?.length || 0} posts from fallback query`);
+
+      if (fallbackData && fallbackData.length > 0) {
+        // Transform fallback data to match Post type
+        const posts: Post[] = fallbackData.map((post: any) => ({
+          id: post.id,
+          url: post.url,
+          created_at: post.created_at,
+          caption: post.caption || undefined,
+          user_id: post.user_id,
+          user: {
+            id: post.user_id,
+            name: post.profiles?.name || "Unknown",
+            username: post.profiles?.username || "Unknown",
+            profile_picture_url: post.profiles?.profile_picture_url || null,
+          }
+        }));
+
+        setExplorePosts(posts);
+        // Prefetch images for height calculation
+        await prefetchImages(posts);
+      } else {
+        setExplorePosts([]);
+      }
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      setExplorePosts([]);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
   const performSearch = useCallback(
     debounce(async (searchQuery: string) => {
       if (searchQuery.trim() === '') {
-        setContactNetworkUsers([]);
-        setSearchLoading(false);
+        setSearchResults([]);
+        setSearchActive(false);
         return;
       }
 
-      setSearchLoading(true);
-      console.log('Performing search with query:', searchQuery);
+      setSearchActive(true);
 
       try {
         // Get profile ID from storage if user context is not available
@@ -200,12 +299,10 @@ const SearchPage: React.FC = () => {
         // Validate profile ID before using it
         if (!profileId) {
           console.error('Search error: No valid profile ID available');
-          setContactNetworkUsers([]);
-          setSearchLoading(false);
+          setSearchResults([]);
+          setSearchActive(false);
           return;
         }
-
-        console.log('Searching with profile ID:', profileId);
 
         // Use search_contacts_and_profiles which returns both registered and unregistered contacts
         const { data: searchResults, error: searchError } = await supabase.rpc(
@@ -217,12 +314,10 @@ const SearchPage: React.FC = () => {
         );
 
         if (searchError) {
-          console.error('Error with search_contacts_and_profiles RPC:', searchError);
+          console.error('Error with contact network search:', searchError);
           // Fallback method - search through contacts directly
           await fallbackSearch(searchQuery, profileId);
         } else if (searchResults && searchResults.length > 0) {
-          console.log(`Found ${searchResults.length} results with search_contacts_and_profiles`);
-
           // Process results from search_contacts_and_profiles
           const processedResults: ContactNetworkUser[] = searchResults.map((result: SearchResult) => ({
             id: result.id, // This is profiles.id (UUID)
@@ -234,7 +329,7 @@ const SearchPage: React.FC = () => {
             isRegistered: result.is_registered
           }));
 
-          // Sort results: Registered users first, then by connection type
+          // Sort results: Direct contacts first, then second-degree connections, then other users
           const sortedResults = processedResults.sort((a, b) => {
             // First prioritize registered vs unregistered
             if (a.isRegistered && !b.isRegistered) return -1;
@@ -254,65 +349,23 @@ const SearchPage: React.FC = () => {
             return aOrder - bOrder;
           });
 
-          setContactNetworkUsers(sortedResults);
+          setSearchResults(sortedResults);
         } else {
-          console.log('No search results found, trying fallback search');
-          await fallbackSearch(searchQuery, profileId);
+          setSearchResults([]);
         }
       } catch (err) {
         console.error('Search error:', err);
-        setContactNetworkUsers([]);
+        setSearchResults([]);
+        // Don't show alert to avoid disrupting UX for minor search errors
+      } finally {
+        setSearchActive(false);
       }
-      setSearchLoading(false);
     }, 300),
     [contextUser?.id]
   );
 
   const fallbackSearch = async (searchQuery: string, profileId: string) => {
-    console.log('Using fallback search with query:', searchQuery);
     try {
-      // --- SEARCH FOR UNREGISTERED CONTACTS FIRST ---
-      // This is a key improvement to ensure we find unregistered contacts
-      console.log('Searching for unregistered contacts in contacts table');
-      const { data: unregisteredContacts, error: unregisteredError } = await supabase
-        .from('contacts')
-        .select(`
-          id,
-          phone_number,
-          name
-        `)
-        .eq('owner_id', profileId)
-        .is('contact_user_id', null)
-        .or(`phone_number.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
-        .limit(20);
-
-      if (unregisteredError) {
-        console.error('Error fetching unregistered contacts:', unregisteredError);
-      } else {
-        console.log(`Found ${unregisteredContacts?.length || 0} unregistered contacts`);
-      }
-
-      // Also try the unregistered_contacts table
-      console.log('Searching in unregistered_contacts table');
-      const { data: extraUnregisteredContacts, error: extraUnregisteredError } = await supabase
-        .from('unregistered_contacts')
-        .select(`
-          id,
-          phone,
-          name
-        `)
-        .eq('user_id', profileId)
-        .or(`phone.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
-        .limit(20);
-
-      if (extraUnregisteredError) {
-        console.error('Error fetching from unregistered_contacts table:', extraUnregisteredError);
-      } else {
-        console.log(`Found ${extraUnregisteredContacts?.length || 0} contacts in unregistered_contacts table`);
-      }
-
-      // --- SEARCH FOR REGISTERED CONTACTS ---
-      console.log('Searching for registered contacts');
       // Start with direct contacts who are on the app
       const { data: directContacts, error: directError } = await supabase
         .from('contacts')
@@ -335,8 +388,6 @@ const SearchPage: React.FC = () => {
 
       if (directError) {
         console.error('Error fetching direct contacts by phone:', directError);
-      } else {
-        console.log(`Found ${directContacts?.length || 0} direct contacts by phone number`);
       }
 
       // Search for direct contacts by name or username
@@ -361,14 +412,66 @@ const SearchPage: React.FC = () => {
 
       if (directNameError) {
         console.error('Error searching contacts by name:', directNameError);
-      } else {
-        console.log(`Found ${directContactsByName?.length || 0} direct contacts by name`);
       }
+
+      // Get unregistered contacts
+      const { data: unregisteredContacts, error: unregisteredError } = await supabase
+        .from('contacts')
+        .select(`
+          id,
+          phone_number
+        `)
+        .eq('owner_id', profileId)
+        .is('contact_user_id', null)
+        .filter('phone_number', 'ilike', `%${searchQuery}%`)
+        .limit(10);
+
+      if (unregisteredError) {
+        console.error('Error fetching unregistered contacts:', unregisteredError);
+      }
+
+      // Try to get second-degree connections (contacts of contacts)
+      const { data: secondDegreeContacts, error: secondDegreeError } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          name,
+          username,
+          profile_picture_url,
+          phone
+        `)
+        .not('id', 'eq', profileId)
+        .or(`name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
+        .limit(20);
+
+      if (secondDegreeError) {
+        console.error('Error fetching second-degree connections:', secondDegreeError);
+      }
+
+      // Combine direct contacts from both queries
+      const allDirectContacts = [
+        ...(directContacts || []),
+        ...(directContactsByName || [])
+      ];
+
+      // Remove duplicates by ID
+      const uniqueDirectContacts = allDirectContacts.filter((contact, index, self) =>
+        index === self.findIndex((c) => c.id === contact.id)
+      );
+
+      // Get IDs of direct contacts to exclude them from the second-degree list
+      const directContactIds = uniqueDirectContacts
+        .map(contact => contact.profiles?.[0]?.id)
+        .filter(id => id !== undefined);
+
+      // Filter second-degree contacts to exclude direct contacts
+      const filteredSecondDegree = (secondDegreeContacts || [])
+        .filter(profile => !directContactIds.includes(profile.id));
 
       // Combine all results
       const combinedResults: ContactNetworkUser[] = [
         // Process direct contacts
-        ...(directContacts || []).map(contact => ({
+        ...uniqueDirectContacts.map(contact => ({
           id: contact.profiles?.[0]?.id || contact.id,
           name: contact.profiles?.[0]?.name || 'Contact',
           username: contact.profiles?.[0]?.username || 'Unknown',
@@ -378,21 +481,10 @@ const SearchPage: React.FC = () => {
           isRegistered: true
         })),
 
-        // Process direct contacts by name
-        ...(directContactsByName || []).map(contact => ({
-          id: contact.profiles?.[0]?.id || contact.id,
-          name: contact.profiles?.[0]?.name || 'Contact',
-          username: contact.profiles?.[0]?.username || 'Unknown',
-          profile_picture_url: contact.profiles?.[0]?.profile_picture_url || null,
-          phone_number: contact.phone_number,
-          connection_type: 'direct' as const,
-          isRegistered: true
-        })),
-
-        // Process unregistered contacts from contacts table
+        // Process unregistered contacts
         ...(unregisteredContacts || []).map(contact => ({
           id: contact.id,
-          name: contact.name || `Contact: ${contact.phone_number}`,
+          name: `Contact: ${contact.phone_number}`,
           username: 'Not on doggo yet',
           profile_picture_url: null,
           phone_number: contact.phone_number,
@@ -400,28 +492,22 @@ const SearchPage: React.FC = () => {
           isRegistered: false
         })),
 
-        // Process unregistered contacts from unregistered_contacts table
-        ...(extraUnregisteredContacts || []).map(contact => ({
-          id: contact.id,
-          name: contact.name || `Contact: ${contact.phone}`,
-          username: 'Not on doggo yet',
-          profile_picture_url: null,
-          phone_number: contact.phone,
-          connection_type: 'unregistered' as const,
-          isRegistered: false
+        // Process second-degree connections
+        ...filteredSecondDegree.map(profile => ({
+          id: profile.id,
+          name: profile.name || 'User',
+          username: profile.username || '',
+          profile_picture_url: profile.profile_picture_url,
+          phone_number: profile.phone,
+          connection_type: 'second_degree' as const,
+          isRegistered: true
         }))
       ];
 
-      // Remove duplicates
-      const uniqueResults = Array.from(new Map(
-        combinedResults.map(item => [item.id, item])
-      ).values());
-
-      console.log(`Fallback search found ${uniqueResults.length} total unique results`);
-      setContactNetworkUsers(uniqueResults);
+      setSearchResults(combinedResults);
     } catch (error) {
       console.error('Fallback search error:', error);
-      setContactNetworkUsers([]);
+      setSearchResults([]);
     }
   };
 
@@ -429,7 +515,7 @@ const SearchPage: React.FC = () => {
     if (query) {
       performSearch(query);
     } else {
-      setContactNetworkUsers([]);
+      setSearchResults([]);
     }
     return performSearch.cancel;
   }, [query, performSearch]);
@@ -443,22 +529,6 @@ const SearchPage: React.FC = () => {
   const handleDeletePost = (postId: string) => {
     setExplorePosts(currentPosts => currentPosts.filter(post => post.id !== postId));
   };
-
-  // Animate search bar hide/show on scroll
-  const onScroll = useCallback(
-    (event: any) => {
-      const currentScrollY = event.nativeEvent.contentOffset.y;
-      const direction = currentScrollY > lastScrollY.current ? 'down' : 'up';
-      lastScrollY.current = currentScrollY;
-
-      Animated.timing(translateY, {
-        toValue: direction === 'down' ? -SEARCH_BAR_HEIGHT : 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    },
-    [translateY]
-  );
 
   const handleLikeUser = async (userId: string, name: string) => {
     try {
@@ -669,44 +739,48 @@ const SearchPage: React.FC = () => {
     );
   };
 
-  const renderExplorePost = ({ item, index }: { item: Post; index: number }) => {
-    const isEven = index % 2 === 0;
-    const imageHeight = width * 0.5 * (1 + (isEven ? 0.2 : -0.2));
-
+  const renderColumn = (posts: Post[], isRightColumn: boolean) => {
     return (
-      <View style={styles.postContainer}>
-        <TouchableOpacity
-          style={styles.userHeader}
-          onPress={() => {
-            navigation.navigate('ProfileDetails', { userId: item.user.id });
-          }}
-        >
-          <Image
-            source={item.user.profile_picture_url ? { uri: item.user.profile_picture_url } : require('@assets/images/Default_pfp.svg.png')}
-            style={styles.userAvatar}
-          />
-          <Text style={styles.userName}>{item.user.name || item.user.username}</Text>
-        </TouchableOpacity>
+      <View style={[
+        styles.column,
+        {
+          marginLeft: isRightColumn ? 8 : 0,
+        }
+      ]}>
+        {posts.map((item) => {
+          const height = imageHeights[item.id] || (width / 2 - 12);
 
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={() => {
-            setSelectedPost(item);
-            setPhotoViewerVisible(true);
-          }}
-        >
-          <Image
-            source={{ uri: item.url }}
-            style={[styles.postImage, { height: imageHeight }]}
-            resizeMode="cover"
-          />
+          // Format the display name with @ for usernames
+          const displayName = item.user.username ? `@${item.user.username}` : item.user.name || "Unknown";
 
-          {item.caption && (
-            <View style={styles.captionContainer}>
-              <Text style={styles.caption}>{item.caption}</Text>
+          return (
+            <View key={item.id} style={[styles.postContainer, { height, marginBottom: 8 }]}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => {
+                  setSelectedPost(item);
+                  setPhotoViewerVisible(true);
+                }}
+              >
+                <Image
+                  source={{ uri: item.url }}
+                  style={styles.postImage}
+                  resizeMode="cover"
+                />
+
+                {/* Username at top left without overlay */}
+                <TouchableOpacity
+                  style={styles.usernameContainer}
+                  onPress={() => {
+                    navigation.navigate('ProfileDetails', { userId: item.user.id });
+                  }}
+                >
+                  <Text numberOfLines={1} style={styles.usernameText}>{displayName}</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
             </View>
-          )}
-        </TouchableOpacity>
+          );
+        })}
       </View>
     );
   };
@@ -728,13 +802,86 @@ const SearchPage: React.FC = () => {
     return <EmptyState message="No posts" />;
   };
 
+  // Calculate image heights based on original aspect ratios
+  const prefetchImages = async (posts: Post[]) => {
+    try {
+      const newHeights: Record<string, number> = {};
+
+      for (const post of posts) {
+        const { id, url } = post;
+
+        try {
+          // Prefetch the image
+          await Image.prefetch(url);
+
+          // Get dimensions
+          const { width: imageWidth, height: imageHeight } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+            Image.getSize(
+              url,
+              (width, height) => resolve({ width, height }),
+              (error) => reject(error)
+            );
+          });
+
+          // Calculate height based on aspect ratio
+          const aspectRatio = imageWidth / imageHeight;
+          const height = (width / 2 - 12) / aspectRatio;
+
+          newHeights[id] = height;
+        } catch (error) {
+          console.error(`Error prefetching image ${id}:`, error);
+          newHeights[id] = width / 2 - 12; // Default to square
+        }
+      }
+
+      setImageHeights(newHeights);
+    } catch (error) {
+      console.error('Error prefetching images:', error);
+    }
+  };
+
+  // Distribute posts between left and right columns
+  useEffect(() => {
+    if (explorePosts.length === 0 || Object.keys(imageHeights).length === 0) return;
+
+    let leftHeight = 0;
+    let rightHeight = 0;
+    const left: Post[] = [];
+    const right: Post[] = [];
+
+    // Distribute posts to balance column heights
+    explorePosts.forEach(post => {
+      const postHeight = imageHeights[post.id] || (width / 2 - 12);
+
+      // Add to shorter column
+      if (leftHeight <= rightHeight) {
+        left.push(post);
+        leftHeight += postHeight + 8; // 8 is the margin between items
+      } else {
+        right.push(post);
+        rightHeight += postHeight + 8;
+      }
+    });
+
+    setLeftColumn(left);
+    setRightColumn(right);
+  }, [explorePosts, imageHeights]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.container}>
-          <SearchBar query={query} setQuery={setQuery} translateY={translateY} />
-          <View style={styles.searchBarPlaceholder} />
+          <View style={styles.headerContainer}>
+            <Animated.View
+              style={[
+                styles.searchBarContainer,
+                { transform: [{ translateY }] }
+              ]}
+            >
+              <SearchBar query={query} setQuery={setQuery} />
+            </Animated.View>
+          </View>
 
           <View style={styles.contentContainer}>
             {query ? (
@@ -742,9 +889,9 @@ const SearchPage: React.FC = () => {
                 <Text style={styles.sectionTitle}>People</Text>
                 {loading ? (
                   <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
-                ) : contactNetworkUsers.length > 0 ? (
+                ) : searchResults.length > 0 ? (
                   <FlatList
-                    data={contactNetworkUsers}
+                    data={searchResults}
                     renderItem={renderUserItem}
                     keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.searchResultsList}
@@ -759,24 +906,23 @@ const SearchPage: React.FC = () => {
                 )}
               </View>
             ) : (
-              <FlatList
-                data={explorePosts}
-                keyExtractor={(item) => item.id}
-                renderItem={renderExplorePost}
-                onScroll={onScroll}
+              <ScrollView
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                contentContainerStyle={styles.gridContainer}
                 refreshControl={
-                  <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    colors={[colors.primary]}
+                  />
                 }
-                ListEmptyComponent={
-                  loading ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color={colors.primary} />
-                    </View>
-                  ) : (
-                    renderEmptyState()
-                  )
-                }
-              />
+              >
+                <View style={styles.masonryContainer}>
+                  {renderColumn(leftColumn, false)}
+                  {renderColumn(rightColumn, true)}
+                </View>
+              </ScrollView>
             )}
           </View>
 
@@ -814,9 +960,97 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    marginTop: SEARCH_BAR_HEIGHT,
     backgroundColor: colors.background,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
     paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  postContainer: {
+    overflow: 'hidden',
+    backgroundColor: '#f0f0f0',
+  },
+  postImage: {
+    width: '100%',
+    height: '100%',
+  },
+  postOverlay: {
+    // Remove or comment out these styles
+    // position: 'absolute',
+    // bottom: 0,
+    // left: 0,
+    // right: 0,
+    // padding: 8,
+    // backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  userAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    marginRight: 6,
+  },
+  userName: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+    flex: 1,
+  },
+  searchResultsList: {
+    paddingTop: SEARCH_BAR_HEIGHT + 20,
+    paddingBottom: 20,
+  },
+  noResultsContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  noResultsText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  searchBarContainer: {
+    width: '100%',
+    backgroundColor: colors.background,
+    zIndex: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  headerContainer: {
+    width: '100%',
+    height: SEARCH_BAR_HEIGHT,
+    position: 'absolute',
+    zIndex: 10,
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  gridContainer: {
+    paddingTop: SEARCH_BAR_HEIGHT + 16,
+    paddingBottom: 16,
+  },
+  masonryContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+  },
+  column: {
+    flex: 1,
   },
   userItem: {
     flexDirection: 'row',
@@ -825,20 +1059,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#EEEEEE',
   },
-  userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 16,
-  },
   userInfo: {
     flex: 1,
     justifyContent: 'center',
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
   },
   userUsername: {
     fontSize: 14,
@@ -883,50 +1106,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 100,
   },
-  postContainer: {
-    marginBottom: 20,
+  usernameContainer: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    maxWidth: '80%',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
-  userHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  postImage: {
-    width: width,
-    height: width,
-  },
-  captionContainer: {
-    padding: 12,
-  },
-  caption: {
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  noResultsContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 40,
-  },
-  noResultsText: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginTop: 10,
-    marginBottom: 16,
-  },
-  searchBarPlaceholder: {
-    height: SEARCH_BAR_HEIGHT,
-  },
-  searchResultsList: {
-    paddingBottom: 20,
-    paddingTop: 10,
+  usernameText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 

@@ -15,9 +15,10 @@ const UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 // Create the Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: false,
+    storage: AsyncStorage,
   },
 });
 

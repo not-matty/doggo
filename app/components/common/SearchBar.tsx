@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 type SearchBarProps = {
   query: string;
   setQuery: (text: string) => void;
-  translateY: Animated.Value; // Required
+  translateY?: Animated.Value; // Made optional
 };
 
 const SearchBar: React.FC<SearchBarProps> = ({ query, setQuery, translateY }) => {
@@ -16,16 +16,13 @@ const SearchBar: React.FC<SearchBarProps> = ({ query, setQuery, translateY }) =>
 
   const clearSearch = () => setQuery('');
 
+  const animationStyle = translateY ? {
+    transform: [{ translateY }],
+    top: insets.top, // Adjust as needed
+  } : {};
+
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        { 
-          transform: [{ translateY }], 
-          top: insets.top, // Adjust as needed
-        }
-      ]}
-    >
+    <Animated.View style={[styles.container, animationStyle]}>
       <Feather name="search" size={20} color="#888" style={styles.icon} />
       <TextInput
         placeholder="Search"

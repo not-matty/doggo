@@ -39,7 +39,6 @@ const AddPhotoScreen: React.FC = () => {
 
   // Choose which auth context to use with safe null checking
   const contextUser = clerkAuthContext?.user || authContext?.user;
-  const checkContactsPermission = clerkAuthContext?.checkContactsPermission || authContext?.checkContactsPermission;
 
   const navigation = useNavigation();
   const [cameraPermission, setCameraPermission] = useState(false);
@@ -127,33 +126,8 @@ const AddPhotoScreen: React.FC = () => {
   };
 
   const handleAddPhoto = async () => {
-    // Before accessing camera or library, check for contacts permission after auth
-    try {
-      if (contextUser) {
-        console.log('Checking contacts permission before adding photo');
-        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${contextUser.id}`);
-        if (hasAuthenticated === 'true') {
-          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${contextUser.id}`);
-          if (hasImportedContacts === 'false') {
-            console.log('User has not imported contacts yet, requesting permission');
-            await checkContactsPermission();
-          } else {
-            console.log('User already has imported contacts, no need to request again');
-          }
-        } else {
-          console.log('User not fully authenticated yet, skipping contacts check');
-        }
-      } else {
-        console.log('No user found, skipping contacts check');
-      }
-
-      // Show modal for photo upload whether or not contacts were imported
-      setModalVisible(true);
-    } catch (error) {
-      console.error('Error checking contacts permission:', error);
-      // Continue with photo upload even if contacts permission check fails
-      setModalVisible(true);
-    }
+    // Call handleUpload directly instead of showing a modal
+    await handleUpload();
   };
 
   const handleUpload = async () => {
@@ -167,8 +141,6 @@ const AddPhotoScreen: React.FC = () => {
 
     setUploading(true);
     try {
-      console.log('Starting photo upload process for user ID:', uploadUserId);
-
       // Optimize the image
       const optimizedImage = await optimizeImage(selectedImage, {
         maxWidth: 2048,
@@ -177,8 +149,9 @@ const AddPhotoScreen: React.FC = () => {
       });
 
       const fileExt = optimizedImage.uri.split('.').pop();
-      const fileName = `${uploadUserId}-${Date.now()}.${fileExt}`;
-      console.log('Prepared file for upload:', fileName);
+      const fileName = `${uploadUserId}/${Date.now()}.${fileExt}`;
+
+      console.log('Preparing to upload file:', fileName);
 
       // Create FormData for the image
       const formData = new FormData();
@@ -188,11 +161,15 @@ const AddPhotoScreen: React.FC = () => {
         type: `image/${fileExt}`,
       } as any);
 
+      console.log('Uploading to storage bucket: posts');
+
       // Upload to Supabase Storage
-      console.log('Uploading to Supabase storage...');
       const { error: uploadError } = await supabase.storage
-        .from('photos')
-        .upload(fileName, formData);
+        .from('posts')
+        .upload(fileName, formData, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
       if (uploadError) {
         console.error('Storage upload error:', uploadError);
@@ -202,43 +179,49 @@ const AddPhotoScreen: React.FC = () => {
         throw uploadError;
       }
 
-      console.log('Image uploaded successfully to storage');
+      console.log('File uploaded successfully, getting public URL');
 
       // Get public URL
       const { data: urlData } = supabase.storage
-        .from('photos')
+        .from('posts')
         .getPublicUrl(fileName);
 
       if (!urlData?.publicUrl) {
         console.error('Failed to get public URL');
-        throw new Error('Failed to get public URL');
+        throw new Error('Failed to get public URL for uploaded file');
       }
 
       console.log('Got public URL:', urlData.publicUrl);
+      console.log('Creating database record...');
 
-      // Create photo record with all necessary fields
-      const newPhoto = {
-        user_id: uploadUserId,
-        url: urlData.publicUrl,
-        caption: caption.trim() || null,
-        created_at: new Date().toISOString()
-      };
-
-      console.log('Inserting photo record:', newPhoto);
-      const { data: insertData, error: insertError } = await supabase
+      // Create photo record
+      const { error: insertError } = await supabase
         .from('photos')
-        .insert([newPhoto])
-        .select();
+        .insert([{
+          user_id: uploadUserId,
+          url: urlData.publicUrl,
+          caption: caption.trim() || null,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
 
       if (insertError) {
         console.error('Database insert error:', insertError);
+
+        // If database insert fails, try to clean up the uploaded file
+        try {
+          await supabase.storage
+            .from('posts')
+            .remove([fileName]);
+        } catch (cleanupError) {
+          console.error('Failed to clean up uploaded file:', cleanupError);
+        }
+
         throw new Error('Failed to save photo information');
       }
 
-      console.log('Photo record created successfully:', insertData);
-
-      // Show success message
-      Alert.alert('Success', 'Photo uploaded successfully!');
+      console.log('Photo upload complete');
       navigation.goBack();
     } catch (error: any) {
       console.error('Upload error:', error);

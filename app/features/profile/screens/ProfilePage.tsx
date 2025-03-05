@@ -17,6 +17,7 @@ import {
   Platform,
   StatusBar,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { ProfileStackParamList, User } from '@navigation/types';
@@ -96,7 +97,6 @@ const ProfilePage: React.FC = () => {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
-  const [aspectRatios, setAspectRatios] = useState<Record<string, number>>({});
   const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
   const [leftColumn, setLeftColumn] = useState<Photo[]>([]);
   const [rightColumn, setRightColumn] = useState<Photo[]>([]);
@@ -126,7 +126,9 @@ const ProfilePage: React.FC = () => {
           Image.getSize(
             photo.url,
             (width, height) => {
-              const scaledHeight = (GALLERY_COLUMN_WIDTH / width) * height;
+              // Calculate height based on aspect ratio
+              const aspectRatio = width / height;
+              const scaledHeight = GALLERY_COLUMN_WIDTH / aspectRatio;
               resolve({ id: photo.id, height: scaledHeight });
             },
             () => {
@@ -152,6 +154,78 @@ const ProfilePage: React.FC = () => {
       console.error('Error prefetching images:', error);
     }
   };
+
+  useEffect(() => {
+    if (contextUser?.id) {
+      fetchUserAndPosts();
+    } else {
+      // Try to use saved credentials
+      const checkStoredProfile = async () => {
+        try {
+          const clerkId = await AsyncStorage.getItem('clerk_user_id');
+          const supabaseUuid = await AsyncStorage.getItem('supabase_uuid');
+          const profileId = await AsyncStorage.getItem('profile_id');
+
+          if (profileId || supabaseUuid || clerkId) {
+            console.log('Found stored credentials, fetching profile');
+            fetchUserAndPosts();
+          } else {
+            // No stored credentials, no point in loading
+            console.log('No stored credentials, skipping profile fetch');
+            setLoading(false);
+          }
+        } catch (error) {
+          console.error('Error checking stored profile:', error);
+          setLoading(false);
+        }
+      };
+
+      checkStoredProfile();
+
+      // Add a timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        if (loading) {
+          console.log('Profile load timeout - forcing exit from loading state');
+          setLoading(false);
+        }
+      }, 10000);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [contextUser?.id]);
+
+  // Distribute photos between left and right columns
+  // using a height-balancing algorithm for better visual appearance
+  useEffect(() => {
+    if (photos.length === 0 || Object.keys(imageHeights).length === 0) return;
+
+    let leftHeight = 0;
+    let rightHeight = 0;
+    const left: Photo[] = [];
+    const right: Photo[] = [];
+
+    // Sort photos by creation date (newest first)
+    const sortedPhotos = [...photos].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    // Distribute photos to balance column heights
+    sortedPhotos.forEach(photo => {
+      const photoHeight = imageHeights[photo.id] || GALLERY_COLUMN_WIDTH;
+
+      // Add to shorter column
+      if (leftHeight <= rightHeight) {
+        left.push(photo);
+        leftHeight += photoHeight + PHOTO_GAP;
+      } else {
+        right.push(photo);
+        rightHeight += photoHeight + PHOTO_GAP;
+      }
+    });
+
+    setLeftColumn(left);
+    setRightColumn(right);
+  }, [photos, imageHeights]);
 
   const fetchUserAndPosts = async () => {
     try {
@@ -312,62 +386,6 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (contextUser?.id) {
-      fetchUserAndPosts();
-    } else {
-      // Try to use saved credentials
-      const checkStoredProfile = async () => {
-        try {
-          const clerkId = await AsyncStorage.getItem('clerk_user_id');
-          const supabaseUuid = await AsyncStorage.getItem('supabase_uuid');
-          const profileId = await AsyncStorage.getItem('profile_id');
-
-          if (profileId || supabaseUuid || clerkId) {
-            console.log('Found stored credentials, fetching profile');
-            fetchUserAndPosts();
-          } else {
-            // No stored credentials, no point in loading
-            console.log('No stored credentials, skipping profile fetch');
-            setLoading(false);
-          }
-        } catch (error) {
-          console.error('Error checking stored profile:', error);
-          setLoading(false);
-        }
-      };
-
-      checkStoredProfile();
-
-      // Add a timeout to prevent infinite loading
-      const timeout = setTimeout(() => {
-        if (loading) {
-          console.log('Profile load timeout - forcing exit from loading state');
-          setLoading(false);
-        }
-      }, 10000);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [contextUser?.id]);
-
-  useEffect(() => {
-    // Simple alternating distribution of posts between columns
-    const left: Photo[] = [];
-    const right: Photo[] = [];
-
-    photos.forEach((photo, index) => {
-      if (index % 2 === 0) {
-        left.push(photo);
-      } else {
-        right.push(photo);
-      }
-    });
-
-    setLeftColumn(left);
-    setRightColumn(right);
-  }, [photos]);
-
   const handleRefresh = () => {
     setRefreshing(true);
     fetchUserAndPosts();
@@ -377,23 +395,6 @@ const ProfilePage: React.FC = () => {
     if (!profile || profile.id !== contextUser?.id) return;
 
     try {
-      // Check for contacts permission if this is an appropriate time
-      if (contextUser) {
-        console.log('Checking contacts permission status before updating profile picture');
-        const hasAuthenticated = await AsyncStorage.getItem(`hasAuthenticated_${contextUser.id}`);
-        if (hasAuthenticated === 'true') {
-          const hasImportedContacts = await AsyncStorage.getItem(`hasImportedContacts_${contextUser.id}`);
-          if (hasImportedContacts === 'false') {
-            console.log('User hasn\'t imported contacts yet, requesting permission');
-            await checkContactsPermission();
-          } else {
-            console.log('User already has imported contacts, no need to request again');
-          }
-        } else {
-          console.log('User not fully authenticated yet, skipping contacts check');
-        }
-      }
-
       // Request media library permissions
       console.log('Requesting media library permissions');
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -643,6 +644,7 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  // Render a column of photos with their calculated heights
   const renderColumn = (photos: Photo[], isRightColumn: boolean) => {
     return (
       <View style={[
@@ -657,7 +659,7 @@ const ProfilePage: React.FC = () => {
             <TouchableOpacity
               key={photo.id}
               style={[
-                styles.galleryItem,
+                styles.photoContainer,
                 {
                   width: GALLERY_COLUMN_WIDTH,
                   height,
@@ -671,7 +673,7 @@ const ProfilePage: React.FC = () => {
             >
               <Image
                 source={{ uri: photo.url }}
-                style={styles.galleryImage}
+                style={styles.photoImage}
                 resizeMode="cover"
               />
             </TouchableOpacity>
@@ -704,17 +706,22 @@ const ProfilePage: React.FC = () => {
       </View>
 
       <AnimatedFlatList
-        data={[]}
+        data={[]} // Using an empty array since we're rendering everything in the header
+        keyExtractor={(_, index) => index.toString()}
         renderItem={() => null}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.contentContainer, { paddingTop: TOTAL_HEADER_HEIGHT }]}
+        contentContainerStyle={styles.contentContainer}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
+          { useNativeDriver: false }
         )}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
         ListHeaderComponent={
           <>
             <View style={styles.scrollableHeader}>
@@ -770,6 +777,8 @@ const ProfilePage: React.FC = () => {
                 </View>
               </View>
             </View>
+
+            {/* Render masonry layout */}
             <View style={styles.galleryContainer}>
               {renderColumn(leftColumn, false)}
               {renderColumn(rightColumn, true)}
@@ -907,11 +916,11 @@ const styles = StyleSheet.create({
   column: {
     flex: 1,
   },
-  galleryItem: {
+  photoContainer: {
     backgroundColor: colors.surface,
     overflow: 'hidden',
   },
-  galleryImage: {
+  photoImage: {
     width: '100%',
     height: '100%',
     backgroundColor: colors.surface,

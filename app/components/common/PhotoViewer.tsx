@@ -55,7 +55,7 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({ visible, photo, onClose, onDe
 
                             // Delete from Supabase storage
                             const { error: storageError } = await supabase.storage
-                                .from('posts')
+                                .from('photos')
                                 .remove([fileName]);
 
                             if (storageError) throw storageError;

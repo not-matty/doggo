@@ -1,6 +1,6 @@
 // app/features/profile/screens/ProfileDetailsScreen.tsx
 
-import React, { useEffect, useState, useContext, useCallback } from 'react';
+import React, { useEffect, useState, useContext, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,11 +19,11 @@ import {
   RefreshControl,
   ScrollView,
 } from 'react-native';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { ProfileStackParamList, User, Post } from '@navigation/types';
 import { supabase } from '@services/supabase';
 import { AuthContext } from '@context/AuthContext';
-import { useClerkAuthContext } from '@context/ClerkAuthContext';
+import { useClerkAuthContext, Profile } from '@context/ClerkAuthContext';
 import { colors, spacing, typography, layout } from '@styles/theme';
 import PhotoViewer from '@components/common/PhotoViewer';
 import { Feather } from '@expo/vector-icons';
@@ -35,6 +35,7 @@ import ProfileHeader from '@components/profile/ProfileHeader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ProfileDetailsRouteProp = RouteProp<ProfileStackParamList, 'ProfileDetails'>;
+type ProfileDetailsNavigationProp = any; // Assuming the navigation prop type
 
 // Define type for unregistered contact explicitly
 interface UnregisteredContact {
@@ -49,7 +50,7 @@ const { width } = Dimensions.get('window');
 const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 const HEADER_HEIGHT = 60;
 const TOTAL_HEADER_HEIGHT = HEADER_HEIGHT + STATUS_BAR_HEIGHT;
-const PROFILE_IMAGE_SIZE = 80;
+const PROFILE_IMAGE_SIZE = 64;
 const HEADER_PADDING = 16;
 const PHOTO_GAP = 16;
 const GALLERY_COLUMN_WIDTH = (width - (HEADER_PADDING * 2) - PHOTO_GAP) / 2;
@@ -72,6 +73,7 @@ const DEFAULT_PLACEHOLDER_USER: User = {
 };
 
 const ProfileDetailsScreen: React.FC = () => {
+  const navigation = useNavigation<ProfileDetailsNavigationProp>();
   const route = useRoute<ProfileDetailsRouteProp>();
   const { userId } = route.params;
   const { state: { profile: currentUserProfile } } = useApp();
@@ -81,23 +83,27 @@ const ProfileDetailsScreen: React.FC = () => {
   const clerkAuthContext = useClerkAuthContext();
   const contextUser = clerkAuthContext?.user || authContext?.user;
 
+  // Add isProfileOwner variable
+  const isProfileOwner = contextUser?.id === userId;
+
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState<string>('');
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
   const scrollY = new Animated.Value(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [leftColumn, setLeftColumn] = useState<Post[]>([]);
-  const [rightColumn, setRightColumn] = useState<Post[]>([]);
+  const [isLikeLoading, setIsLikeLoading] = useState(true);
   const [isLiked, setIsLiked] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
+  const [leftColumn, setLeftColumn] = useState<Post[]>([]);
+  const [rightColumn, setRightColumn] = useState<Post[]>([]);
 
   // Add a flag to track if checkIfLiked is already running
-  const isCheckingLikeRef = React.useRef(false);
+  const isCheckingLikeRef = useRef(false);
 
   const headerTranslateY = scrollY.interpolate({
     inputRange: [0, TOTAL_HEADER_HEIGHT],
@@ -119,74 +125,25 @@ const ProfileDetailsScreen: React.FC = () => {
 
   useEffect(() => {
     if (userId) {
-      // We want this to load on first mount or if userId changes
-      // This is important data for the profile page, so we'll load it immediately
-      // But we won't have it auto-refresh on auth changes
+      // Reset loading and error states
+      setIsLikeLoading(true);
+      setErrorMessage(null);
+
+      // Load profile data
       fetchProfile();
 
       // Reset flag before checking
       isCheckingLikeRef.current = false;
-
-      // We'll only check likes on initial load
-      // For refreshed data, user must pull to refresh
       checkIfLiked();
 
-      // Add a timeout to prevent infinite loading
-      const timeout = setTimeout(() => {
-        if (isLoading) {
-          console.log('ProfileDetails timeout - forcing exit from loading state');
-          setIsLoading(false);
-          setErrorMessage('Loading timed out, try refreshing');
-        }
-      }, 10000);
-
-      return () => clearTimeout(timeout);
+      // Remove timeout as it's causing issues
+      return () => { };
     } else {
       console.error('No userId provided to ProfileDetailsScreen');
-      setIsLoading(false);
+      setIsLikeLoading(false);
       setErrorMessage('No user ID provided');
     }
-  }, [userId]); // Only depends on userId, not auth state
-
-  useEffect(() => {
-    // Pre-calculate image heights
-    posts.forEach(post => {
-      if (!imageHeights[post.id]) {
-        Image.getSize(post.url, (width, height) => {
-          const aspectRatio = width / height;
-          const calculatedHeight = GALLERY_COLUMN_WIDTH / aspectRatio;
-          setImageHeights(prev => ({
-            ...prev,
-            [post.id]: calculatedHeight
-          }));
-        }, (error) => {
-          console.error('Error loading image dimensions:', error);
-          // Fallback to square if error
-          setImageHeights(prev => ({
-            ...prev,
-            [post.id]: GALLERY_COLUMN_WIDTH
-          }));
-        });
-      }
-    });
-  }, [posts]);
-
-  useEffect(() => {
-    // Simple alternating distribution of posts between columns
-    const left: Post[] = [];
-    const right: Post[] = [];
-
-    posts.forEach((post, index) => {
-      if (index % 2 === 0) {
-        left.push(post);
-      } else {
-        right.push(post);
-      }
-    });
-
-    setLeftColumn(left);
-    setRightColumn(right);
-  }, [posts]);
+  }, [userId]);
 
   const getContactName = async (phoneNumber: string) => {
     try {
@@ -212,30 +169,25 @@ const ProfileDetailsScreen: React.FC = () => {
   };
 
   const fetchProfile = async () => {
-    console.log('fetchProfile - Starting profile fetch with userId:', userId);
-
-    // Add this early check to avoid unnecessary database calls
-    if (!userId) {
-      console.error('fetchProfile - No userId provided');
-      setErrorMessage('User ID is required');
-      setIsLoading(false);
-      return;
-    }
-
-    // Validate UUID format if not a phone number
-    if (!/^\+\d+$/.test(userId) && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
-      console.error('fetchProfile - Invalid user ID format:', userId);
-      setErrorMessage('Invalid user ID format');
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      // Set loading at the start of the fetch
-      setIsLoading(true);
-      setErrorMessage(null);
-      console.log('fetchProfile - Fetching user with ID:', userId);
+      if (!userId) {
+        console.error('No userId provided for profile fetch');
+        setIsLikeLoading(false);
+        setErrorMessage('Missing user ID');
+        return;
+      }
 
+      // Check if we're dealing with a valid UUID before querying
+      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
+      if (!isValidUuid) {
+        console.log('Invalid UUID format for userId:', userId);
+        setIsLikeLoading(false);
+        setErrorMessage('Invalid user ID format');
+        return;
+      }
+
+      // Fetch user profile
       const { data: userData, error: userError } = await supabase
         .from('profiles')
         .select('*')
@@ -248,7 +200,6 @@ const ProfileDetailsScreen: React.FC = () => {
 
         // If user not found, they might be unregistered
         // Check unregistered_contacts table
-        console.log('fetchProfile - User not found in profiles, checking unregistered_contacts');
         const { data: unregisteredData, error: unregisteredError } = await supabase
           .from('unregistered_contacts')
           .select('id, name, phone, user_id, created_at')
@@ -261,7 +212,6 @@ const ProfileDetailsScreen: React.FC = () => {
           // Last attempt: Check if this is a contact by phone number
           // This handles cases where we have a contact_user_id but not a direct UUID
           if (userError.code === 'PGRST116' && /^\+\d+$/.test(userId)) {
-            console.log('fetchProfile - Attempting to find contact by phone number:', userId);
             // If userId looks like a phone number, try to find it in unregistered contacts
             const { data: phoneData, error: phoneError } = await supabase
               .from('unregistered_contacts')
@@ -270,7 +220,6 @@ const ProfileDetailsScreen: React.FC = () => {
               .single();
 
             if (!phoneError && phoneData) {
-              console.log('fetchProfile - Found unregistered contact by phone:', phoneData);
               // Create a placeholder user with the unregistered contact's info
               const placeholderUser: User = {
                 ...DEFAULT_PLACEHOLDER_USER,
@@ -281,19 +230,16 @@ const ProfileDetailsScreen: React.FC = () => {
 
               setUser(placeholderUser);
               setPosts([]); // No posts for unregistered users
-              setIsLoading(false);
+              setIsLikeLoading(false);
               return;
-            } else {
-              console.error('Failed to find user by phone number:', phoneError);
             }
           }
 
           setErrorMessage('Unable to find user profile');
-          setIsLoading(false);
+          setIsLikeLoading(false);
           return;
         }
 
-        console.log('fetchProfile - Found unregistered contact:', unregisteredData);
         // Create a placeholder user with the unregistered contact's info
         const placeholderUser: User = {
           ...DEFAULT_PLACEHOLDER_USER,
@@ -304,48 +250,42 @@ const ProfileDetailsScreen: React.FC = () => {
 
         setUser(placeholderUser);
         setPosts([]); // No posts for unregistered users
-        setIsLoading(false);
+        setIsLikeLoading(false);
         return;
       }
 
-      // Success path - we found the profile
-      if (userData) {
-        console.log('fetchProfile - Found user profile:', userData.id);
-        setUser(userData);
+      setUser(userData);
+      setErrorMessage(null); // Clear any previous errors
 
-        // Fetch user's posts
-        console.log('fetchProfile - Fetching posts for user:', userData.id);
-        const { data: postsData, error: postsError } = await supabase
-          .from('photos')
-          .select('*')
-          .eq('user_id', userData.id)
-          .order('created_at', { ascending: false });
-
-        if (postsError) {
-          console.error('Error fetching posts:', postsError);
-        } else {
-          console.log(`fetchProfile - Found ${postsData?.length || 0} posts`);
-          setPosts(postsData || []);
-
-          // Start prefetching images for better performance
-          if (postsData && postsData.length > 0) {
-            prefetchImages(postsData);
-          }
+      // Get contact name if this is an unregistered user
+      if (userData.phone) {
+        try {
+          const contactName = await getContactName(userData.phone);
+          setDisplayName(contactName || userData.username || 'Unknown User');
+        } catch (error) {
+          console.error('Error getting contact name:', error);
+          setDisplayName(userData.username || 'Unknown User');
         }
+      }
 
-        // Fetch user's liked status
-        await checkIfLiked();
-      } else {
-        console.error('fetchProfile - User data is null despite no error');
-        setErrorMessage('User not found');
+      // User exists, fetch their photos
+      const { data: postsData, error: postsError } = await supabase
+        .from('photos')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (postsError) {
+        console.error('Error fetching posts:', postsError);
+      } else if (postsData) {
+        setPosts(postsData);
       }
     } catch (error) {
-      console.error('Unexpected error in fetchProfile:', error);
+      console.error('Error in fetchProfile:', error);
       setErrorMessage('An unexpected error occurred');
     } finally {
-      // Ensure loading state is turned off regardless of outcome
-      setIsLoading(false);
-      setRefreshing(false);
+      // Always exit loading state
+      setIsLikeLoading(false);
     }
   };
 
@@ -416,6 +356,9 @@ const ProfileDetailsScreen: React.FC = () => {
 
   const handleLike = async () => {
     try {
+      // Set loading state
+      setIsLikeLoading(true);
+
       // Check if we have a valid user context or profile
       if (!contextUser?.id && !currentUserProfile?.id) {
         Alert.alert('Error', 'You must be logged in to like users.');
@@ -430,9 +373,6 @@ const ProfileDetailsScreen: React.FC = () => {
         console.error('Cannot like: Missing target user ID');
         return;
       }
-
-      // Show a loading state
-      setIsLoading(true);
 
       if (isLiked) {
         // Unlike the user
@@ -514,14 +454,18 @@ const ProfileDetailsScreen: React.FC = () => {
       console.error('Error toggling like:', error);
       Alert.alert('Error', 'Failed to update like status. Please try again.');
     } finally {
-      setIsLoading(false);
+      // Update loading state
+      setIsLikeLoading(false);
     }
   };
 
   const handleLikeUser = async () => {
-    if (!user || !contextUser) return;
-
     try {
+      // Set loading state
+      setIsLikeLoading(true);
+
+      if (!user || !contextUser) return;
+
       // Check if already liked
       const { data: existingLike, error: checkError } = await supabase
         .from('likes')
@@ -600,43 +544,49 @@ const ProfileDetailsScreen: React.FC = () => {
     } catch (err) {
       console.error('Error liking user:', err);
       Alert.alert('Error', 'Failed to like user. Please try again.');
+    } finally {
+      // Update loading state
+      setIsLikeLoading(false);
     }
   };
 
   const handleLikeUnregistered = async () => {
-    if (!user || !user.phone) {
-      console.error('Cannot like user: Missing user or phone number');
-      Alert.alert('Error', 'Cannot like this user (missing contact information)');
-      return;
-    }
+    try {
+      // Set loading state
+      setIsLikeLoading(true);
 
-    // Ensure we have a valid user ID from auth context or AsyncStorage
-    let currentUserId = contextUser?.id;
-    if (!currentUserId) {
-      try {
-        const storedProfileId = await AsyncStorage.getItem('profile_id');
-        if (storedProfileId) {
-          currentUserId = storedProfileId;
-        } else {
-          console.error('Cannot like user: Not authenticated');
-          Alert.alert('Error', 'You need to be logged in to like users');
-          return;
-        }
-      } catch (error) {
-        console.error('Error retrieving profile ID:', error);
-        Alert.alert('Error', 'Failed to verify your account');
+      if (!user || !user.phone) {
+        console.error('Cannot like user: Missing user or phone number');
+        Alert.alert('Error', 'Cannot like this user (missing contact information)');
         return;
       }
-    }
 
-    // Validate phone number format
-    if (!/^\+\d+$/.test(user.phone)) {
-      console.error('Invalid phone number format:', user.phone);
-      Alert.alert('Error', 'Invalid phone number format for this contact');
-      return;
-    }
+      // Ensure we have a valid user ID from auth context or AsyncStorage
+      let currentUserId = contextUser?.id;
+      if (!currentUserId) {
+        try {
+          const storedProfileId = await AsyncStorage.getItem('profile_id');
+          if (storedProfileId) {
+            currentUserId = storedProfileId;
+          } else {
+            console.error('Cannot like user: Not authenticated');
+            Alert.alert('Error', 'You need to be logged in to like users');
+            return;
+          }
+        } catch (error) {
+          console.error('Error retrieving profile ID:', error);
+          Alert.alert('Error', 'Failed to verify your account');
+          return;
+        }
+      }
 
-    try {
+      // Validate phone number format
+      if (!/^\+\d+$/.test(user.phone)) {
+        console.error('Invalid phone number format:', user.phone);
+        Alert.alert('Error', 'Invalid phone number format for this contact');
+        return;
+      }
+
       // Store the like in the database with proper fields and types
       const likeData = {
         user_id: currentUserId,
@@ -680,6 +630,9 @@ const ProfileDetailsScreen: React.FC = () => {
     } catch (err) {
       console.error('Error liking unregistered user:', err);
       Alert.alert('Error', 'Failed to send like. Please try again.');
+    } finally {
+      // Update loading state
+      setIsLikeLoading(false);
     }
   };
 
@@ -707,44 +660,73 @@ const ProfileDetailsScreen: React.FC = () => {
     setRefreshing(false);
   };
 
-  const prefetchImages = async (imagesToPrefetch: Post[]) => {
+  const prefetchImages = async () => {
     try {
-      // Create an array of prefetch promises
-      const prefetchPromises = imagesToPrefetch.map(post => {
-        // Prefetch the image
-        const imagePrefetch = Image.prefetch(post.url);
-
-        // Get image dimensions with error handling
-        const dimensionsPromise = new Promise<{ id: string; height: number }>((resolve) => {
-          Image.getSize(
-            post.url,
-            (width, height) => {
-              const scaledHeight = (GALLERY_COLUMN_WIDTH / width) * height;
-              resolve({ id: post.id, height: scaledHeight });
-            },
-            () => {
-              // Fallback to square if error
-              resolve({ id: post.id, height: GALLERY_COLUMN_WIDTH });
-            }
-          );
-        });
-
-        return Promise.all([imagePrefetch, dimensionsPromise]);
-      });
-
-      // Wait for all prefetch operations to complete
-      const results = await Promise.all(prefetchPromises);
-
-      // Update image heights
       const newHeights: Record<string, number> = {};
-      results.forEach(([_, { id, height }]) => {
-        newHeights[id] = height;
-      });
+
+      for (const post of posts) {
+        const { id, url } = post;
+
+        try {
+          // Prefetch the image
+          await Image.prefetch(url);
+
+          // Get dimensions
+          const { width: imageWidth, height: imageHeight } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+            Image.getSize(
+              url,
+              (width, height) => resolve({ width, height }),
+              (error) => reject(error)
+            );
+          });
+
+          // Calculate height based on aspect ratio
+          const aspectRatio = imageWidth / imageHeight;
+          const height = GALLERY_COLUMN_WIDTH / aspectRatio;
+
+          newHeights[id] = height;
+        } catch (error) {
+          console.error(`Error prefetching image ${id}:`, error);
+          newHeights[id] = GALLERY_COLUMN_WIDTH; // Default to square
+        }
+      }
+
       setImageHeights(newHeights);
     } catch (error) {
       console.error('Error prefetching images:', error);
     }
   };
+
+  useEffect(() => {
+    if (posts.length === 0 || Object.keys(imageHeights).length === 0) return;
+
+    let leftHeight = 0;
+    let rightHeight = 0;
+    const left: Post[] = [];
+    const right: Post[] = [];
+
+    // Sort posts by creation date (newest first)
+    const sortedPosts = [...posts].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    // Distribute posts to balance column heights
+    sortedPosts.forEach(post => {
+      const postHeight = imageHeights[post.id] || GALLERY_COLUMN_WIDTH;
+
+      // Add to shorter column
+      if (leftHeight <= rightHeight) {
+        left.push(post);
+        leftHeight += postHeight + PHOTO_GAP;
+      } else {
+        right.push(post);
+        rightHeight += postHeight + PHOTO_GAP;
+      }
+    });
+
+    setLeftColumn(left);
+    setRightColumn(right);
+  }, [posts, imageHeights]);
 
   const renderColumn = (posts: Post[], isRightColumn: boolean) => {
     return (
@@ -760,7 +742,7 @@ const ProfileDetailsScreen: React.FC = () => {
             <TouchableOpacity
               key={post.id}
               style={[
-                styles.galleryItem,
+                styles.postContainer,
                 {
                   width: GALLERY_COLUMN_WIDTH,
                   height,
@@ -774,7 +756,7 @@ const ProfileDetailsScreen: React.FC = () => {
             >
               <Image
                 source={{ uri: post.url }}
-                style={styles.galleryImage}
+                style={styles.postImage}
                 resizeMode="cover"
               />
             </TouchableOpacity>
@@ -784,102 +766,114 @@ const ProfileDetailsScreen: React.FC = () => {
     );
   };
 
-  const renderProfileInfo = () => {
-    if (!user) return null;
+  const renderContent = () => {
+    if (errorMessage) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={handleRefresh}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
     return (
-      <View style={styles.profileInfo}>
-        <Image
-          source={{ uri: user.profile_picture_url || 'https://via.placeholder.com/150' }}
-          style={styles.profileImage}
-        />
-        <Text style={styles.name}>{displayName}</Text>
-        <Text style={styles.username}>@{user.username}</Text>
-        {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+          contentContainerStyle={styles.contentContainer}
+        >
+          <View style={styles.profileSection}>
+            <View style={styles.profileHeader}>
+              <View style={styles.profileImageContainer}>
+                <Image
+                  source={
+                    user?.profile_picture_url
+                      ? { uri: user.profile_picture_url }
+                      : require('@assets/images/Default_pfp.svg.png')
+                  }
+                  style={styles.profileImage}
+                />
+              </View>
 
-        {contextUser?.id !== user.id && (
-          <TouchableOpacity
-            style={[
-              styles.likeButton,
-              isLiked && styles.likedButton,
-              user.is_placeholder && { backgroundColor: colors.accent }
-            ]}
-            onPress={user.is_placeholder ? handleLikeUnregistered : handleLike}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color={colors.background} />
-            ) : (
-              <Text style={[
-                styles.likeButtonText,
-                user.is_placeholder && { color: colors.background }
-              ]}>
-                {user.is_placeholder ? 'Invite' : (isLiked ? 'Liked' : 'Like')}
+              <View style={styles.userInfo}>
+                <Text style={styles.name}>
+                  {user?.name || 'Unknown'}
+                </Text>
+                <Text style={styles.username}>
+                  {user?.is_placeholder
+                    ? 'Not on doggo yet'
+                    : '@unknown'}
+                </Text>
+                {user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
+              </View>
+            </View>
+
+            <View style={styles.actionButtons}>
+              {!isProfileOwner && (
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    isLiked && styles.likedButton
+                  ]}
+                  onPress={user?.is_placeholder ? handleLikeUnregistered : handleLikeUser}
+                  disabled={isLikeLoading}
+                >
+                  <Text style={styles.actionButtonText}>
+                    {isLikeLoading
+                      ? 'Loading...'
+                      : isLiked
+                        ? 'Liked'
+                        : user?.is_placeholder
+                          ? 'Invite'
+                          : 'Like'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {posts.length > 0 ? (
+            <View style={styles.galleryContainer}>
+              {renderColumn(leftColumn, false)}
+              {renderColumn(rightColumn, true)}
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                {user?.is_placeholder
+                  ? 'This user hasn\'t joined doggo yet'
+                  : 'No posts yet'}
               </Text>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+            </View>
+          )}
+        </ScrollView>
+
+        <PhotoViewer
+          visible={photoViewerVisible}
+          photo={selectedPost}
+          onClose={() => {
+            setPhotoViewerVisible(false);
+            setSelectedPost(null);
+          }}
+          onDelete={handleDeletePost}
+          isOwner={isProfileOwner}
+        />
+      </SafeAreaView>
     );
   };
 
-  const renderContent = () => (
-    <SafeAreaView style={styles.container}>
-      <Animated.View
-        style={[
-          styles.headerContainer,
-          {
-            transform: [{ translateY: headerTranslateY }],
-            opacity: headerOpacity,
-          }
-        ]}
-      >
-        <View style={styles.header}>
-          <Text style={[styles.username, { marginLeft: USERNAME_LEFT }]}>
-            {user?.username ? `@${user.username}` : ''}
-          </Text>
-        </View>
-      </Animated.View>
-
-      <AnimatedFlatList
-        data={posts}
-        renderItem={({ item, index }) => renderColumn([item], index % 2 === 1)}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={styles.contentContainer}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-          />
-        }
-        ListHeaderComponent={renderProfileInfo}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No posts yet</Text>
-          </View>
-        }
-      />
-
-      <PhotoViewer
-        visible={photoViewerVisible}
-        photo={selectedPost}
-        onClose={() => {
-          setPhotoViewerVisible(false);
-          setSelectedPost(null);
-        }}
-        onDelete={handleDeletePost}
-        isOwner={selectedPost?.user_id === contextUser?.id}
-      />
-    </SafeAreaView>
-  );
-
-  if (loading) {
+  if (isLikeLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -891,35 +885,13 @@ const ProfileDetailsScreen: React.FC = () => {
 };
 
 export default ProfileDetailsScreen;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  headerContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    height: TOTAL_HEADER_HEIGHT,
-    backgroundColor: colors.background,
-  },
-  header: {
-    height: HEADER_HEIGHT,
-    marginTop: STATUS_BAR_HEIGHT,
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-  },
-  username: {
-    fontSize: typography.title.fontSize,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    textAlign: 'left',
-  },
   contentContainer: {
-    paddingTop: TOTAL_HEADER_HEIGHT,
+    paddingBottom: spacing.xl * 2,
   },
   emptyContainer: {
     flex: 1,
@@ -931,25 +903,21 @@ const styles = StyleSheet.create({
     fontSize: typography.body.fontSize,
     color: colors.textSecondary,
   },
-  fixedHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: TOTAL_HEADER_HEIGHT,
-    backgroundColor: colors.background,
-    zIndex: 1000,
-    paddingTop: STATUS_BAR_HEIGHT,
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: HEADER_PADDING,
-  },
-  scrollableHeader: {
-    paddingTop: TOTAL_HEADER_HEIGHT + spacing.xl,
-    paddingHorizontal: HEADER_PADDING,
+    alignItems: 'center',
     backgroundColor: colors.background,
+  },
+  loadingText: {
+    color: colors.textPrimary,
+    fontSize: typography.title.fontSize,
   },
   profileSection: {
-    marginBottom: spacing.xl,
+    paddingHorizontal: HEADER_PADDING,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    backgroundColor: colors.background,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -957,88 +925,55 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   profileImageContainer: {
+    marginRight: spacing.md,
+  },
+  profileImage: {
     width: PROFILE_IMAGE_SIZE,
     height: PROFILE_IMAGE_SIZE,
     borderRadius: PROFILE_IMAGE_SIZE / 2,
-    marginRight: spacing.md,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    ...Platform.select({
-      ios: {
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
+    marginBottom: spacing.sm,
     resizeMode: 'cover',
   },
   userInfo: {
     flex: 1,
   },
   name: {
-    fontSize: 24,
-    color: colors.textPrimary,
+    fontSize: typography.title.fontSize,
     fontWeight: '600',
-    marginBottom: spacing.sm,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  username: {
+    fontSize: typography.body.fontSize,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
   },
   bio: {
     fontSize: typography.body.fontSize,
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
-    lineHeight: 20,
+    marginTop: spacing.xs,
   },
   actionButtons: {
     flexDirection: 'row',
+    justifyContent: 'flex-start',
     marginTop: spacing.md,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: layout.borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    marginHorizontal: spacing.sm,
-  },
-  actionButtonText: {
-    color: colors.primary,
-    fontSize: typography.body.fontSize,
-    fontWeight: '500',
-  },
-  mainContent: {
-    flex: 1,
-  },
-  profileInfo: {
-    alignItems: 'center',
-    padding: spacing.xl,
-    backgroundColor: colors.background,
-  },
-  likeButton: {
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    borderRadius: layout.borderRadius.full,
-    marginTop: spacing.md,
-    minWidth: 120,
-    alignItems: 'center',
+    borderRadius: layout.borderRadius.md,
+    marginRight: spacing.sm,
+  },
+  actionButtonText: {
+    color: colors.background,
+    fontSize: typography.body.fontSize,
+    fontWeight: '500',
   },
   likedButton: {
     backgroundColor: colors.success,
-  },
-  likeButtonText: {
-    color: colors.background,
-    fontSize: typography.body.fontSize,
-    fontWeight: '600',
   },
   galleryContainer: {
     flexDirection: 'row',
@@ -1057,23 +992,42 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.surface,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  loadingIndicator: {
-    marginTop: spacing.xl,
-  },
-  errorText: {
-    color: colors.error,
-    fontSize: typography.body.fontSize,
-  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    padding: spacing.xl,
+  },
+  errorText: {
+    fontSize: typography.body.fontSize,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: layout.borderRadius.md,
+  },
+  retryButtonText: {
+    color: colors.background,
+    fontSize: typography.body.fontSize,
+    fontWeight: '500',
+  },
+  row: {
+    justifyContent: 'space-between',
+    paddingHorizontal: HEADER_PADDING,
+    marginBottom: PHOTO_GAP,
+  },
+  postContainer: {
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  postImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: colors.surface,
   },
 });
+
